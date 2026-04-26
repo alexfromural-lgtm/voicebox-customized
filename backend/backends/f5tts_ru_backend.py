@@ -248,15 +248,16 @@ class F5TTSRuBackend:
                     torch.from_numpy(audio_data).unsqueeze(0),  # [1, T]
                     sr,
                 )
+                effective_ref_text = ref_text
             else:
                 # Fallback: 1 second of silence (no reference available)
                 logger.warning("No reference audio — generating without voice cloning")
                 silence = torch.zeros(1, F5_SAMPLE_RATE)
                 ref_audio_tuple = (silence, F5_SAMPLE_RATE)
-                ref_text = ""
+                effective_ref_text = ""
 
             # Normalise ref_text ending (required by F5-TTS internals)
-            norm_ref_text = ref_text.strip()
+            norm_ref_text = effective_ref_text.strip()
             if norm_ref_text and not norm_ref_text.endswith((".", "。", " ")):
                 norm_ref_text += ". "
 
