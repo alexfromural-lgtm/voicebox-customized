@@ -73,6 +73,10 @@ const MODEL_DESCRIPTIONS: Record<string, string> = {
     'Qwen3-TTS CustomVoice 1.7B by Alibaba. 9 premium preset voices with instruct-based style control for tone, emotion, and prosody. Supports 10 languages.',
   'qwen-custom-voice-0.6B':
     'Qwen3-TTS CustomVoice 0.6B by Alibaba. Lightweight version with the same 9 preset voices and instruct control. Faster inference for lower-end hardware.',
+  'silero-ru':
+    'Silero TTS Russian v4 by Silero. Lightweight CPU-friendly model with 5 native Russian preset voices (aidar, baya, kseniya, xenia, eugene). ~150 MB.',
+  'f5tts-ru':
+    'F5-TTS Russian fine-tune by Misha24-10. Voice cloning from a 3-second audio sample. Trained on 5000+ hours of Russian + English speech. Supports stress marking with + before stressed vowels. CC-BY-NC-4.0.',
   'whisper-base':
     'Smallest Whisper model (74M parameters). Fast transcription with moderate accuracy.',
   'whisper-small':
@@ -408,7 +412,9 @@ export function ModelManagement() {
         m.model_name.startsWith('luxtts') ||
         m.model_name.startsWith('chatterbox') ||
         m.model_name.startsWith('tada') ||
-        m.model_name.startsWith('kokoro'),
+        m.model_name.startsWith('kokoro') ||
+        m.model_name.startsWith('silero') ||
+        m.model_name.startsWith('f5tts'),
     ) ?? [];
   const whisperModels = modelStatus?.models.filter((m) => m.model_name.startsWith('whisper')) ?? [];
 

@@ -16,6 +16,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { apiClient } from '@/lib/api/client';
 import { getLanguageOptionsForEngine, type LanguageCode } from '@/lib/constants/languages';
+import { applyEngineSelection } from '@/components/Generation/EngineModelSelector';
 import { useGenerationForm } from '@/lib/hooks/useGenerationForm';
 import { useProfile, useProfiles } from '@/lib/hooks/useProfiles';
 import { useStory } from '@/lib/hooks/useStories';
@@ -121,6 +122,24 @@ export function FloatingGenerateBox({
 
   // Sync engine selection to global store so ProfileList can filter
   const watchedEngine = form.watch('engine');
+
+  // When the user explicitly picks an engine incompatible with the currently
+  // selected preset profile, deselect that profile so they can choose a compatible one.
+  // Using onEngineChange (user-initiated) instead of a useEffect avoids the race
+  // condition where profile→engine sync fires before the engine watcher can check.
+  function handleEngineChange(rawValue: string) {
+    if (!selectedProfile || selectedProfile.voice_type !== 'preset') return;
+    const engineKey = rawValue.startsWith('qwen_custom_voice:')
+      ? 'qwen_custom_voice'
+      : rawValue.startsWith('qwen:')
+        ? 'qwen'
+        : rawValue.startsWith('tada:')
+          ? 'tada'
+          : rawValue;
+    if (engineKey !== selectedProfile.preset_engine) {
+      setSelectedProfileId(null);
+    }
+  }
   useEffect(() => {
     if (watchedEngine) {
       setSelectedEngine(watchedEngine);
@@ -128,14 +147,6 @@ export function FloatingGenerateBox({
   }, [watchedEngine, setSelectedEngine]);
 
   // Sync generation form language, engine, and effects with selected profile
-  type EngineValue =
-    | 'qwen'
-    | 'luxtts'
-    | 'chatterbox'
-    | 'chatterbox_turbo'
-    | 'tada'
-    | 'kokoro'
-    | 'qwen_custom_voice';
   useEffect(() => {
     if (selectedProfile?.language) {
       form.setValue('language', selectedProfile.language as LanguageCode);
@@ -143,13 +154,21 @@ export function FloatingGenerateBox({
     // Auto-switch engine to match the profile
     const engine = selectedProfile?.default_engine ?? selectedProfile?.preset_engine;
     if (engine) {
-      form.setValue('engine', engine as EngineValue);
+      const selectValue =
+        engine === 'qwen'
+          ? 'qwen:1.7B'
+          : engine === 'qwen_custom_voice'
+            ? 'qwen_custom_voice:1.7B'
+            : engine === 'tada'
+              ? 'tada:1B'
+              : engine;
+      applyEngineSelection(form, selectValue);
     } else if (selectedProfile && selectedProfile.voice_type !== 'preset') {
       // Cloned/designed profile with no default — ensure a compatible (non-preset) engine
       const currentEngine = form.getValues('engine');
-      const presetEngines = new Set(['kokoro', 'qwen_custom_voice']);
+      const presetEngines = new Set(['kokoro', 'qwen_custom_voice', 'silero']);
       if (currentEngine && presetEngines.has(currentEngine)) {
-        form.setValue('engine', 'qwen');
+        applyEngineSelection(form, 'qwen:1.7B');
       }
     }
     // Pre-fill effects from profile defaults
@@ -493,7 +512,7 @@ export function FloatingGenerateBox({
                   />
 
                   <FormItem className="flex-1 space-y-0">
-                    <EngineModelSelector form={form} compact />
+                    <EngineModelSelector form={form} compact onEngineChange={handleEngineChange} />
                   </FormItem>
 
                   <FormItem className="flex-1 space-y-0">

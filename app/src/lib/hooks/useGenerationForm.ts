@@ -27,6 +27,8 @@ const generationSchema = z.object({
       'chatterbox_turbo',
       'tada',
       'kokoro',
+      'silero',
+      'f5tts_ru',
     ])
     .optional(),
 });
@@ -54,6 +56,14 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
     modelName: downloadingModelName || '',
     displayName: downloadingDisplayName || '',
     enabled: !!downloadingModelName,
+    onComplete: () => {
+      setDownloadingModelName(null);
+      setDownloadingDisplayName(null);
+    },
+    onError: () => {
+      setDownloadingModelName(null);
+      setDownloadingDisplayName(null);
+    },
   });
 
   const form = useForm<GenerationFormValues>({
@@ -82,10 +92,10 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
       return;
     }
 
+    let downloadStarted = false;
     try {
       const engine = data.engine || 'qwen';
-      const modelName =
-        engine === 'luxtts'
+      const modelName =        engine === 'luxtts'
           ? 'luxtts'
           : engine === 'chatterbox'
             ? 'chatterbox-tts'
@@ -97,9 +107,13 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
                   : 'tada-1b'
                 : engine === 'kokoro'
                   ? 'kokoro'
-                  : engine === 'qwen_custom_voice'
-                    ? `qwen-custom-voice-${data.modelSize}`
-                    : `qwen-tts-${data.modelSize}`;
+                  : engine === 'silero'
+                    ? 'silero-ru'
+                    : engine === 'f5tts_ru'
+                      ? 'f5tts-ru'
+                      : engine === 'qwen_custom_voice'
+                        ? `qwen-custom-voice-${data.modelSize}`
+                        : `qwen-tts-${data.modelSize}`;
       const displayName =
         engine === 'luxtts'
           ? 'LuxTTS'
@@ -113,13 +127,17 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
                   : 'TADA 1B'
                 : engine === 'kokoro'
                   ? 'Kokoro 82M'
-                  : engine === 'qwen_custom_voice'
-                    ? data.modelSize === '1.7B'
-                      ? 'Qwen CustomVoice 1.7B'
-                      : 'Qwen CustomVoice 0.6B'
-                    : data.modelSize === '1.7B'
-                      ? 'Qwen TTS 1.7B'
-                      : 'Qwen TTS 0.6B';
+                  : engine === 'silero'
+                    ? 'Silero TTS Russian'
+                    : engine === 'f5tts_ru'
+                      ? 'F5-TTS Russian'
+                      : engine === 'qwen_custom_voice'
+                        ? data.modelSize === '1.7B'
+                          ? 'Qwen CustomVoice 1.7B'
+                          : 'Qwen CustomVoice 0.6B'
+                        : data.modelSize === '1.7B'
+                          ? 'Qwen TTS 1.7B'
+                          : 'Qwen TTS 0.6B';
 
       // Check if model needs downloading
       try {
@@ -129,6 +147,7 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
         if (model && !model.downloaded) {
           setDownloadingModelName(modelName);
           setDownloadingDisplayName(displayName);
+          downloadStarted = true;
         }
       } catch (error) {
         console.error('Failed to check model status:', error);
@@ -175,8 +194,13 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
         variant: 'destructive',
       });
     } finally {
-      setDownloadingModelName(null);
-      setDownloadingDisplayName(null);
+      // If a download was started, the onComplete/onError callbacks on the toast hook
+      // will clear the state once the SSE reports completion. Only clear immediately
+      // when no download was triggered (model was already available).
+      if (!downloadStarted) {
+        setDownloadingModelName(null);
+        setDownloadingDisplayName(null);
+      }
     }
   }
 

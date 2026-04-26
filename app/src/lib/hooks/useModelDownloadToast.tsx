@@ -27,8 +27,9 @@ export function useModelDownloadToast({
   const { toast } = useToast();
   const serverUrl = useServerStore((state) => state.serverUrl);
   const toastIdRef = useRef<string | null>(null);
-  // biome-ignore lint: Using any for toast update ref to handle complex toast types
+  // biome-ignore lint: Using any for toast update/dismiss refs to handle complex toast types
   const toastUpdateRef = useRef<any>(null);
+  const toastDismissRef = useRef<(() => void) | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const formatBytes = useCallback((bytes: number): string => {
@@ -67,6 +68,7 @@ export function useModelDownloadToast({
     });
     toastIdRef.current = toastResult.id;
     toastUpdateRef.current = toastResult.update;
+    toastDismissRef.current = toastResult.dismiss;
 
     // Subscribe to progress updates via Server-Sent Events
     const eventSourceUrl = `${serverUrl}/models/progress/${modelName}`;
@@ -194,6 +196,11 @@ export function useModelDownloadToast({
         });
         toastIdRef.current = null;
         toastUpdateRef.current = null;
+        toastDismissRef.current = null;
+      }
+
+      if (onError) {
+        onError('Connection failed');
       }
     };
 
@@ -206,7 +213,15 @@ export function useModelDownloadToast({
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
-      // Note: We don't dismiss the toast here as it might still be showing completion state
+      // Dismiss any toast that is still open. Completion/error toasts already have a
+      // finite duration so dismissing them slightly early is harmless; this prevents
+      // the "Connecting to download…" state from being stuck on screen indefinitely.
+      if (toastDismissRef.current) {
+        toastDismissRef.current();
+        toastDismissRef.current = null;
+        toastIdRef.current = null;
+        toastUpdateRef.current = null;
+      }
     };
   }, [enabled, serverUrl, modelName, displayName, toast, formatBytes, onComplete, onError]);
 

@@ -6,6 +6,8 @@
  * Chatterbox Multilingual supports 23 languages.
  * Chatterbox Turbo is English-only.
  * Kokoro supports 8 languages.
+ * Silero TTS supports Russian.
+ * F5-TTS Russian supports Russian and English.
  */
 
 /** All languages that any engine supports. */
@@ -70,6 +72,8 @@ export const ENGINE_LANGUAGES: Record<string, readonly LanguageCode[]> = {
   tada: ['en', 'ar', 'zh', 'de', 'es', 'fr', 'it', 'ja', 'pl', 'pt'],
   kokoro: ['en', 'es', 'fr', 'hi', 'it', 'pt', 'ja', 'zh'],
   qwen_custom_voice: ['zh', 'en', 'ja', 'ko', 'de', 'fr', 'ru', 'pt', 'es', 'it'],
+  silero: ['ru'],
+  f5tts_ru: ['ru', 'en'],
 } as const;
 
 /** Helper: get language options for a given engine. */

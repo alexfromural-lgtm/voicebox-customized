@@ -287,6 +287,33 @@ def build_server(cuda=False):
             "en_core_web_sm",
             "--hidden-import",
             "en_core_web_sm",
+            # Silero TTS Russian — torch.package model loaded at runtime via httpx
+            # download from Silero CDN.  No new data files needed.
+            # torch.package is part of torch which is already handled above.
+            "--hidden-import",
+            "backend.backends.silero_backend",
+            # F5-TTS Russian — uses importlib.resources.files("f5_tts") to locate
+            # the default vocab.txt and other data files at runtime.
+            # --collect-all bundles the .py source + data so importlib.resources works
+            # correctly in the frozen environment.
+            "--hidden-import",
+            "backend.backends.f5tts_ru_backend",
+            "--hidden-import",
+            "f5_tts",
+            "--hidden-import",
+            "f5_tts.model",
+            "--hidden-import",
+            "f5_tts.model.backbones.dit",
+            "--hidden-import",
+            "f5_tts.infer",
+            "--hidden-import",
+            "f5_tts.infer.utils_infer",
+            "--collect-all",
+            "f5_tts",
+            # vocos ships config.yaml + pytorch_model.bin paths relative to the
+            # package directory; --collect-all ensures those are accessible at runtime.
+            "--collect-all",
+            "vocos",
             # unidic-lite ships the MeCab dictionary used by fugashi (pulled in
             # by misaki[ja]). The dict lives in unidic_lite/dicdir/ and is
             # discovered via the package's DICDIR constant, so the data files

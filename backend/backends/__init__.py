@@ -14,7 +14,7 @@ from ..utils import hf_offline_patch  # noqa: F401
 
 import threading
 from dataclasses import dataclass, field
-from typing import Protocol, Optional, Tuple, List
+from typing import Callable, Optional, Protocol, Tuple, List
 from typing_extensions import runtime_checkable
 import numpy as np
 
@@ -55,6 +55,12 @@ class ModelConfig:
     needs_trim: bool = False
     supports_instruct: bool = False
     languages: list[str] = field(default_factory=lambda: ["en"])
+    # Optional override for models stored outside the standard HF cache structure.
+    # Return True if the model files are present on disk.
+    check_downloaded: Optional[Callable[[], bool]] = None
+    # Optional size reporter for models stored outside the standard HF cache structure.
+    # Return size in MB, or None if unknown.
+    get_size_mb: Optional[Callable[[], Optional[float]]] = None
 
 
 @runtime_checkable
@@ -176,6 +182,8 @@ TTS_ENGINES = {
     "chatterbox_turbo": "Chatterbox Turbo",
     "tada": "TADA",
     "kokoro": "Kokoro",
+    "silero": "Silero TTS",
+    "f5tts_ru": "F5-TTS Russian",
 }
 
 
@@ -237,6 +245,27 @@ def _get_qwen_custom_voice_configs() -> list[ModelConfig]:
             languages=["zh", "en", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"],
         ),
     ]
+
+
+def _check_silero_downloaded() -> bool:
+    """Check if the Silero v4_ru model file is present on disk."""
+    try:
+        from .silero_backend import _get_model_cache_path
+        return _get_model_cache_path().exists()
+    except Exception:
+        return False
+
+
+def _get_silero_size_mb() -> Optional[float]:
+    """Return the size of the downloaded Silero model in MB, or None if not found."""
+    try:
+        from .silero_backend import _get_model_cache_path
+        path = _get_model_cache_path()
+        if path.exists():
+            return path.stat().st_size / (1024 * 1024)
+    except Exception:
+        pass
+    return None
 
 
 def _get_non_qwen_tts_configs() -> list[ModelConfig]:
@@ -320,6 +349,25 @@ def _get_non_qwen_tts_configs() -> list[ModelConfig]:
             hf_repo_id="hexgrad/Kokoro-82M",
             size_mb=350,
             languages=["en", "es", "fr", "hi", "it", "pt", "ja", "zh"],
+        ),
+        ModelConfig(
+            model_name="silero-ru",
+            display_name="Silero TTS Russian",
+            engine="silero",
+            hf_repo_id="snakers4/silero-models",
+            size_mb=150,
+            languages=["ru"],
+            check_downloaded=lambda: _check_silero_downloaded(),
+            get_size_mb=lambda: _get_silero_size_mb(),
+        ),
+        ModelConfig(
+            model_name="f5tts-ru",
+            display_name="F5-TTS Russian",
+            engine="f5tts_ru",
+            hf_repo_id="Misha24-10/F5-TTS_RUSSIAN",
+            size_mb=1200,
+            needs_trim=True,
+            languages=["ru", "en"],
         ),
     ]
 
@@ -578,6 +626,14 @@ def get_tts_backend_for_engine(engine: str) -> TTSBackend:
             from .kokoro_backend import KokoroTTSBackend
 
             backend = KokoroTTSBackend()
+        elif engine == "silero":
+            from .silero_backend import SileroTTSBackend
+
+            backend = SileroTTSBackend()
+        elif engine == "f5tts_ru":
+            from .f5tts_ru_backend import F5TTSRuBackend
+
+            backend = F5TTSRuBackend()
         elif engine == "qwen_custom_voice":
             from .qwen_custom_voice_backend import QwenCustomVoiceBackend
 

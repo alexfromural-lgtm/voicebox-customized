@@ -250,6 +250,8 @@ async def get_model_status():
             "hf_repo_id": cfg.hf_repo_id,
             "model_size": cfg.model_size,
             "check_loaded": lambda c=cfg: check_model_loaded(c),
+            "check_downloaded": cfg.check_downloaded,
+            "get_size_mb": cfg.get_size_mb,
         }
         for cfg in registry_configs
     ]
@@ -272,7 +274,19 @@ async def get_model_status():
             size_mb = None
             loaded = False
 
-            if cache_info:
+            # Let backends with non-standard storage paths self-report download status.
+            if config.get("check_downloaded"):
+                try:
+                    downloaded = bool(config["check_downloaded"]())
+                    if downloaded and config.get("get_size_mb"):
+                        try:
+                            size_mb = config["get_size_mb"]()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            if not downloaded and cache_info:
                 repo_id = config["hf_repo_id"]
                 for repo in cache_info.repos:
                     if repo.repo_id == repo_id:
@@ -343,6 +357,12 @@ async def get_model_status():
                 loaded = config["check_loaded"]()
             except Exception:
                 loaded = False
+
+            # Fallback for models stored outside the standard HF cache structure
+            # (e.g. Silero, which uses a custom directory). If the model is loaded
+            # in memory it is definitely on disk.
+            if not downloaded and loaded:
+                downloaded = True
 
             is_downloading = config["hf_repo_id"] in active_download_repos
 

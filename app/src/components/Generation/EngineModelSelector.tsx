@@ -27,6 +27,8 @@ const ENGINE_OPTIONS = [
   { value: 'tada:1B', label: 'TADA 1B', engine: 'tada' },
   { value: 'tada:3B', label: 'TADA 3B Multilingual', engine: 'tada' },
   { value: 'kokoro', label: 'Kokoro 82M', engine: 'kokoro' },
+  { value: 'silero', label: 'Silero TTS Russian', engine: 'silero' },
+  { value: 'f5tts_ru', label: 'F5-TTS Russian', engine: 'f5tts_ru' },
 ] as const;
 
 const ENGINE_DESCRIPTIONS: Record<string, string> = {
@@ -37,13 +39,15 @@ const ENGINE_DESCRIPTIONS: Record<string, string> = {
   chatterbox_turbo: 'English, [laugh] [cough] tags',
   tada: 'HumeAI, 700s+ coherent audio',
   kokoro: '82M params, CPU realtime, 8 langs',
+  silero: '5 Russian preset voices, CPU-friendly',
+  f5tts_ru: 'Russian voice cloning, 5000h training data',
 };
 
 /** Engines that only support English and should force language to 'en' on select. */
 const ENGLISH_ONLY_ENGINES = new Set(['luxtts', 'chatterbox_turbo']);
 
 /** Engines that support cloned (reference audio) profiles. */
-const CLONING_ENGINES = new Set(['qwen', 'luxtts', 'chatterbox', 'chatterbox_turbo', 'tada']);
+const CLONING_ENGINES = new Set(['qwen', 'luxtts', 'chatterbox', 'chatterbox_turbo', 'tada', 'f5tts_ru']);
 
 function getAvailableOptions(selectedProfile?: VoiceProfileResponse | null) {
   if (!selectedProfile) return ENGINE_OPTIONS;
@@ -111,9 +115,11 @@ interface EngineModelSelectorProps {
   form: UseFormReturn<GenerationFormValues>;
   compact?: boolean;
   selectedProfile?: VoiceProfileResponse | null;
+  /** Called with the raw select value when the user explicitly changes the engine. */
+  onEngineChange?: (value: string) => void;
 }
 
-export function EngineModelSelector({ form, compact, selectedProfile }: EngineModelSelectorProps) {
+export function EngineModelSelector({ form, compact, selectedProfile, onEngineChange }: EngineModelSelectorProps) {
   const engine = form.watch('engine') || 'qwen';
   const modelSize = form.watch('modelSize');
   const selectValue = getSelectValue(engine, modelSize);
@@ -133,7 +139,13 @@ export function EngineModelSelector({ form, compact, selectedProfile }: EngineMo
     : undefined;
 
   return (
-    <Select value={selectValue} onValueChange={(v) => applyEngineSelection(form, v)}>
+    <Select
+      value={selectValue}
+      onValueChange={(v) => {
+        applyEngineSelection(form, v);
+        onEngineChange?.(v);
+      }}
+    >
       <FormControl>
         <SelectTrigger className={triggerClass}>
           <SelectValue />

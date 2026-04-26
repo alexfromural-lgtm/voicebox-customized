@@ -199,6 +199,76 @@ def trim_tts_output(
     return trimmed
 
 
+def noise_gate(
+    audio: np.ndarray,
+    sample_rate: int = 24000,
+    threshold_db: float = -45.0,
+    frame_ms: int = 10,
+    attack_ms: float = 5.0,
+    release_ms: float = 60.0,
+) -> np.ndarray:
+    """
+    Apply a noise gate to suppress low-level noise during pauses.
+
+    Frames whose RMS energy is below *threshold_db* are faded to silence
+    using a smooth attack/release envelope.  This fixes the audible
+    background hiss that Silero (and similar models) produce during
+    natural pause segments.
+
+    Args:
+        audio: Mono float32 audio array.
+        sample_rate: Sample rate in Hz.
+        threshold_db: Gate open threshold in dB.  Frames below this level
+            are suppressed.  -45 dB works well for Silero; lower values
+            (e.g. -50) are more conservative.
+        frame_ms: RMS analysis frame size in milliseconds.
+        attack_ms: Time to open the gate (speech onset), in ms.
+        release_ms: Time to close the gate (pause onset), in ms.
+
+    Returns:
+        Gated audio array (same length as input).
+    """
+    audio = audio.astype(np.float32, copy=False)
+    if len(audio) == 0:
+        return audio
+
+    frame_len = max(1, int(sample_rate * frame_ms / 1000))
+    n_frames = len(audio) // frame_len
+    if n_frames == 0:
+        return audio
+
+    threshold_linear = 10 ** (threshold_db / 20)
+
+    # Per-frame RMS → binary open/closed gate
+    rms = np.array(
+        [
+            np.sqrt(np.mean(audio[i * frame_len : (i + 1) * frame_len] ** 2))
+            for i in range(n_frames)
+        ]
+    )
+    gate_open = (rms >= threshold_linear).astype(np.float32)
+
+    # Smooth the binary gate with exponential attack / release coefficients
+    attack_coef = 1.0 - np.exp(-1.0 / max(1, attack_ms / frame_ms))
+    release_coef = 1.0 - np.exp(-1.0 / max(1, release_ms / frame_ms))
+
+    envelope = np.zeros(n_frames, dtype=np.float32)
+    prev = 0.0
+    for i in range(n_frames):
+        target = gate_open[i]
+        coef = attack_coef if target > prev else release_coef
+        prev = prev + coef * (target - prev)
+        envelope[i] = prev
+
+    # Expand frame-level envelope back to sample level
+    gain = np.repeat(envelope, frame_len)
+    # Handle any trailing samples not covered by full frames
+    if len(gain) < len(audio):
+        gain = np.concatenate([gain, np.full(len(audio) - len(gain), envelope[-1])])
+
+    return audio * gain
+
+
 def preprocess_reference_audio(
     audio: np.ndarray,
     sample_rate: int,

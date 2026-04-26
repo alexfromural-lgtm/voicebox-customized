@@ -104,6 +104,21 @@ async def list_preset_voices(engine: str):
                 for speaker_id, display_name, gender, lang, _desc in QWEN_CUSTOM_VOICES
             ],
         }
+    if engine == "silero":
+        from ..backends.silero_backend import SILERO_VOICES
+
+        return {
+            "engine": engine,
+            "voices": [
+                {
+                    "voice_id": vid,
+                    "name": name,
+                    "gender": gender,
+                    "language": lang,
+                }
+                for vid, name, gender, lang in SILERO_VOICES
+            ],
+        }
     return {"engine": engine, "voices": []}
 
 @router.get("/profiles/{profile_id}", response_model=models.VoiceProfileResponse)
