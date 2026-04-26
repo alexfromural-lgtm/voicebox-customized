@@ -70,8 +70,7 @@ function App() {
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const serverStartingRef = useRef(false);
 
-  // Automatically check for app updates on startup and show toast notifications
-  useAutoUpdater({ checkOnMount: true, showToast: true });
+  useAutoUpdater({ checkOnMount: false, showToast: false });
 
   // Sync stored setting to Rust on startup
   useEffect(() => {

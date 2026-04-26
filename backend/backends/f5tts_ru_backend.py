@@ -41,6 +41,12 @@ F5TTS_RU_HF_REPO = "Misha24-10/F5-TTS_RUSSIAN"
 VOCOS_HF_REPO = "charactr/vocos-mel-24khz"
 F5_SAMPLE_RATE = 24000
 
+# F5-TTS context window is finite; references longer than this produce garbled
+# output because the combined (ref + gen) mel sequence exceeds the trained
+# maximum duration.  15 s is well within the safe range while still giving the
+# model enough voice characteristics to clone from.
+_MAX_REF_AUDIO_SECONDS = 15
+
 # Model architecture for F5-TTS Base (DiT backbone)
 _MODEL_CFG = dict(
     dim=1024,
@@ -244,11 +250,42 @@ class F5TTSRuBackend:
                 audio_data, sr = sf.read(ref_audio, dtype="float32")
                 if audio_data.ndim > 1:
                     audio_data = audio_data.mean(axis=1)
+
+                # Trim over-long reference audio to avoid exceeding the model's
+                # context window.  Scale the reference text by the same ratio so
+                # the phoneme-to-frame alignment stays consistent.
+                max_samples = int(_MAX_REF_AUDIO_SECONDS * sr)
+                if len(audio_data) > max_samples:
+                    ratio = max_samples / len(audio_data)
+                    audio_data = audio_data[:max_samples]
+                    trimmed_chars = max(1, int(len(ref_text) * ratio))
+                    effective_ref_text = ref_text[:trimmed_chars]
+                    logger.debug(
+                        "F5-TTS: reference audio trimmed to %ds (%.1fs original); "
+                        "ref_text trimmed to %d/%d chars",
+                        _MAX_REF_AUDIO_SECONDS,
+                        len(audio_data) / sr / ratio,
+                        trimmed_chars,
+                        len(ref_text),
+                    )
+                else:
+                    effective_ref_text = ref_text
+
+                # Append a short silence to the END of the reference audio so
+                # the mel-spectrogram boundary (ref_audio_len cut point inside
+                # infer_batch_process) falls within a quiet region rather than
+                # right at a voiced frame.  This prevents the model's attention
+                # from "bleeding" the reference tail into the first generated
+                # frames, which is the source of the leading noise artifact.
+                silence_pad = int(0.30 * sr)  # 300 ms of zeros at native sr
+                audio_data = np.concatenate(
+                    [audio_data, np.zeros(silence_pad, dtype=audio_data.dtype)]
+                )
+
                 ref_audio_tuple = (
                     torch.from_numpy(audio_data).unsqueeze(0),  # [1, T]
                     sr,
                 )
-                effective_ref_text = ref_text
             else:
                 # Fallback: 1 second of silence (no reference available)
                 logger.warning("No reference audio — generating without voice cloning")
@@ -281,6 +318,17 @@ class F5TTSRuBackend:
                 return np.zeros(F5_SAMPLE_RATE, dtype=np.float32), F5_SAMPLE_RATE
 
             final_wave = np.asarray(result[0], dtype=np.float32)
+
+            # Hard-cut the leading artifact from the mel-spectrogram boundary.
+            cut_samples = int(0.10 * F5_SAMPLE_RATE)  # 100 ms
+            if len(final_wave) > cut_samples:
+                final_wave = final_wave[cut_samples:]
+
+            # Short fade-in to smooth any remaining onset transient.
+            fade_samples = int(0.02 * F5_SAMPLE_RATE)  # 20 ms
+            if len(final_wave) > fade_samples:
+                final_wave[:fade_samples] *= np.linspace(0.0, 1.0, fade_samples, dtype=np.float32)
+
             return final_wave, F5_SAMPLE_RATE
 
         return await asyncio.to_thread(_generate_sync)

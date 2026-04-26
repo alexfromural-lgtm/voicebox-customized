@@ -341,4 +341,33 @@ MIT License — see [LICENSE](LICENSE) for details.
 just dev-backend
 just dev-frontend
 
-just build-tauri-local
+ `just build-local` | **Windows:** CPU + CUDA server binaries + Tauri installer |
+
+ The CUDA binary is built separately. just build-local runs build-server → build-server-cuda → build-tauri in order, but you stopped it early — so only the CPU binary (build-server) completed. The CUDA binary was never rebuilt.
+
+You just need to run the CUDA build step alone:
+
+cd D:\TestNew\voicebox
+just build-server-cuda
+This will:
+
+Build the CUDA binary to backend\dist\voicebox-server-cuda\
+Also copy it to %APPDATA%\sh.voicebox.app\backends\cuda
+
+cd "C:\Users\aamak\AppData\Roaming\sh.voicebox.app\backends\cuda"
+.\voicebox-server-cuda.exe --data-dir "D:\TestNew\voicebox\data" --port 17493
+
+Get-Process -Id (Get-NetTCPConnection -LocalPort 17493 -State Listen).OwningProcess | Stop-Process -Force
+
+
+-- rebuid UI
+cd D:\TestNew\voicebox\tauri
+npm run tauri -- build
+
+cd D:\TestNew\voicebox\tauri
+npx vite build
+npm run tauri -- build --debug
+
+//start debug UI version
+D:\TestNew\voicebox\tauri\src-tauri\target\debug\voicebox.exe
+

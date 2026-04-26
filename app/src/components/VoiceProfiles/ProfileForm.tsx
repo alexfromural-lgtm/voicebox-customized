@@ -376,6 +376,7 @@ export function ProfileForm() {
       });
       setSampleMode('record');
       setAvatarPreview(null);
+      setVoiceSource('clone');
     }
   }, [editingProfile, profileFormDraft, open, form]);
 
@@ -397,6 +398,12 @@ export function ProfileForm() {
       setSelectedPresetVoiceId('');
     }
   }, [presetVoices, selectedPresetVoiceId]);
+
+  useEffect(() => {
+    if (voiceSource === 'builtin') {
+      setDefaultEngine(selectedPresetEngine);
+    }
+  }, [voiceSource, selectedPresetEngine]);
   async function handleTranscribe() {
     const file = form.getValues('sampleFile');
     if (!file) {
@@ -1220,7 +1227,8 @@ export function ProfileForm() {
                         setDefaultEngine(v === '_none' ? '' : v);
                       }}
                       disabled={
-                        voiceSource === 'builtin' || editingProfile?.voice_type === 'preset'
+                        (isCreating && voiceSource === 'builtin') ||
+                        (!isCreating && editingProfile?.voice_type === 'preset')
                       }
                     >
                       <FormControl>

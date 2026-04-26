@@ -289,46 +289,8 @@ async fn start_server(
         let exe_path = cuda_dir.join(cuda_name);
         if exe_path.exists() {
             println!("Found CUDA backend at {:?}", cuda_dir);
-
-            // Version check: run --version from the onedir directory so
-            // PyInstaller can find its support files for the fast --version path
-            let app_version = app.config().version.clone().unwrap_or_default();
-            let version_ok = match std::process::Command::new(&exe_path)
-                .arg("--version")
-                .current_dir(&cuda_dir)
-                .output()
-            {
-                Ok(output) => {
-                    // Output format: "voicebox-server X.Y.Z\n"
-                    // --noconsole PyInstaller binaries may write to stderr instead
-                    // of stdout when sys.stdout is None; check both.
-                    let stdout_str = String::from_utf8_lossy(&output.stdout);
-                    let stderr_str = String::from_utf8_lossy(&output.stderr);
-                    let version_str = if stdout_str.trim().is_empty() { stderr_str } else { stdout_str };
-                    let binary_version = version_str.trim().split_whitespace().last().unwrap_or("");
-                    println!("CUDA --version raw output: {:?}", version_str.trim());
-                    if binary_version == app_version {
-                        println!("CUDA binary version {} matches app version", binary_version);
-                        true
-                    } else {
-                        println!(
-                            "CUDA binary version mismatch: binary={}, app={}. Falling back to CPU.",
-                            binary_version, app_version
-                        );
-                        false
-                    }
-                }
-                Err(e) => {
-                    println!("Failed to check CUDA binary version: {}. Falling back to CPU.", e);
-                    false
-                }
-            };
-
-            if version_ok {
-                Some(exe_path)
-            } else {
-                None
-            }
+            // Version check disabled: custom binary in use.
+            Some(exe_path)
         } else {
             println!("No CUDA backend found, using bundled CPU binary");
             None

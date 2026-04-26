@@ -244,9 +244,9 @@ def _register_lifecycle(application: FastAPI) -> None:
         if not _compatible:
             logger.warning("GPU COMPATIBILITY: %s", _cuda_warning)
 
-        from .services.cuda import check_and_update_cuda_binary
-
-        create_background_task(check_and_update_cuda_binary())
+        # Auto-update disabled: custom CUDA binary in place, skip version check.
+        # from .services.cuda import check_and_update_cuda_binary
+        # create_background_task(check_and_update_cuda_binary())
 
         try:
             progress_manager = get_progress_manager()
