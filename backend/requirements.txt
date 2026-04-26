@@ -75,6 +75,11 @@ pypinyin
 rjieba
 matplotlib  # f5_tts.infer.utils_infer imports matplotlib at module level
 
+# G2P (Grapheme-to-Phoneme) for Russian phonetic conversion via espeak-ng
+# Note: espeak-ng is a system binary, NOT a Python package. Install separately:
+#   - Windows: winget install espeak-ng or download from https://espeak.sourceforge.net/
+# The g2p_ru.py module will look for it at C:\Program Files\eSpeak NG\espeak-ng.exe
+
 # Utilities
 python-multipart>=0.0.6
 Pillow>=10.0.0

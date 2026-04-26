@@ -1,9 +1,10 @@
 """
-F5-TTS Russian backend implementation.
+F5-TTS Russian backend implementation with G2P phonetic conversion.
 
 Zero-shot voice cloning using the Misha24-10/F5-TTS_RUSSIAN fine-tune of F5-TTS.
-Trained on 5000+ hours of Russian + English speech. Supports stress marking
-with + before stressed vowels (молок+о).
+Trained on 5000+ hours of Russian + English speech. Now automatically converts
+Russian Cyrillic text to phonetic representation with stress markers via espeak-ng,
+bypassing vocabulary limitations and providing more accurate pronunciation.
 
 HuggingFace repo:  Misha24-10/F5-TTS_RUSSIAN  (public, CC-BY-NC-4.0)
 Checkpoint:        F5TTS_v1_Base_v2/model_last_inference.safetensors
@@ -36,6 +37,19 @@ from .base import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Import G2P utility for Russian phonetic conversion
+try:
+    from ..utils.g2p_ru import convert_russian_to_phonetic, is_espeak_installed
+except ImportError as e:
+    logger.debug(f"G2P module not available: {e}")
+
+    def convert_russian_to_phonetic(text, force_en_phones=False):
+        return text, False
+    
+    def is_espeak_installed():
+        return False
+
 
 F5TTS_RU_HF_REPO = "Misha24-10/F5-TTS_RUSSIAN"
 VOCOS_HF_REPO = "charactr/vocos-mel-24khz"
@@ -213,11 +227,17 @@ class F5TTSRuBackend:
         instruct: Optional[str] = None,
     ) -> Tuple[np.ndarray, int]:
         """
-        Generate speech by cloning voice from reference audio.
+        Generate speech by cloning voice from reference audio with G2P phonetic conversion.
+
+        Converts Russian Cyrillic text to phonetic representation with stress markers
+        before passing to the model. This bypasses vocabulary limitations and provides
+        more accurate pronunciation by teaching the model acoustic properties of stressed
+        vs unstressed vowels as distinct entities.
 
         Args:
             text: Target text to synthesize. For best Russian quality, use
-                  + before stressed vowels (e.g. "молок+о").
+                  + before stressed vowels (e.g. "молок+о"). Note: G2P will now
+                  automatically convert Cyrillic to phonemes with stress markers.
             voice_prompt: Dict with ref_audio (file path) and ref_text.
             language: Ignored — model handles ru/en natively.
             seed: Optional random seed.
@@ -227,6 +247,20 @@ class F5TTSRuBackend:
             (audio_array, sample_rate)
         """
         await self.load_model()
+
+        # Convert Russian text to phonetic representation with stress markers
+        is_ru_language = language.lower().startswith("ru") or any(
+            char in text for char in "АаБбВвГгДдЕеЁёЖжЗзИиЙйКкЛлМмНнОоПпРрСсТтУуФфХхЦцЧчШщЪъЫыЬьЭэЮюЯя"
+        )
+
+        if is_ru_language and text.strip():
+            logger.info("Converting Russian text to phonetic representation...")
+            if is_espeak_installed():
+                phonetic_text, success = convert_russian_to_phonetic(text)
+                if success:
+                    logger.debug(f"Original: {text[:100]}..." if len(text) > 100 else f"Original: {text}")
+                    logger.debug(f"Phonetic: {phonetic_text[:100]}..." if len(phonetic_text) > 100 else f"Phonetic: {phonetic_text}")
+                    text = phonetic_text
 
         ref_audio = voice_prompt.get("ref_audio")
         ref_text = voice_prompt.get("ref_text", "")
