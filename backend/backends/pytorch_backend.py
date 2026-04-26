@@ -335,44 +335,84 @@ class PyTorchSTTBackend:
 
         def _transcribe_sync():
             """Run synchronous transcription in thread pool."""
-            # Load audio
+            # Load audio via librosa (no ffmpeg dependency) at Whisper's
+            # required 16 kHz sample rate.
             audio, _sr = load_audio(audio_path, sample_rate=16000)
 
-            # Inference runs with the process's default HF_HUB_OFFLINE
-            # state — forcing offline here (issue #462) broke online users
-            # whose `get_decoder_prompt_ids` / tokenizer calls issue
-            # legitimate metadata lookups.
-            # Process audio
-            inputs = self.processor(
-                audio,
-                sampling_rate=16000,
-                return_tensors="pt",
-            )
-            inputs = inputs.to(self.device)
+            audio_duration = len(audio) / 16000
+            whisper_window = 30  # seconds — Whisper's native context window
 
-            # Generate transcription
-            # If language is provided, force it; otherwise let Whisper auto-detect
-            generate_kwargs = {}
-            if language:
-                forced_decoder_ids = self.processor.get_decoder_prompt_ids(
-                    language=language,
-                    task="transcribe",
+            if audio_duration <= whisper_window:
+                # Short audio: single-pass inference, fastest path.
+                inputs = self.processor(
+                    audio,
+                    sampling_rate=16000,
+                    return_tensors="pt",
                 )
-                generate_kwargs["forced_decoder_ids"] = forced_decoder_ids
+                inputs = inputs.to(self.device)
 
-            with torch.no_grad():
-                predicted_ids = self.model.generate(
-                    inputs["input_features"],
-                    **generate_kwargs,
+                generate_kwargs = {}
+                if language:
+                    forced_decoder_ids = self.processor.get_decoder_prompt_ids(
+                        language=language,
+                        task="transcribe",
+                    )
+                    generate_kwargs["forced_decoder_ids"] = forced_decoder_ids
+
+                with torch.no_grad():
+                    predicted_ids = self.model.generate(
+                        inputs["input_features"],
+                        **generate_kwargs,
+                    )
+
+                return self.processor.batch_decode(
+                    predicted_ids, skip_special_tokens=True
+                )[0].strip()
+
+            # Long audio: slide a 30 s window with 5 s overlap and join chunks.
+            stride = 5  # seconds overlap on each side
+            step = whisper_window - stride  # advance per chunk
+            chunks = []
+            offset = 0
+            sr = 16000
+
+            while offset < len(audio):
+                end = min(offset + whisper_window * sr, len(audio))
+                chunk = audio[offset:end]
+
+                inputs = self.processor(
+                    chunk,
+                    sampling_rate=sr,
+                    return_tensors="pt",
                 )
+                inputs = inputs.to(self.device)
 
-            # Decode
-            transcription = self.processor.batch_decode(
-                predicted_ids,
-                skip_special_tokens=True,
-            )[0]
+                generate_kwargs = {}
+                if language:
+                    forced_decoder_ids = self.processor.get_decoder_prompt_ids(
+                        language=language,
+                        task="transcribe",
+                    )
+                    generate_kwargs["forced_decoder_ids"] = forced_decoder_ids
 
-            return transcription.strip()
+                with torch.no_grad():
+                    predicted_ids = self.model.generate(
+                        inputs["input_features"],
+                        **generate_kwargs,
+                    )
+
+                text = self.processor.batch_decode(
+                    predicted_ids, skip_special_tokens=True
+                )[0].strip()
+
+                if text:
+                    chunks.append(text)
+
+                if end == len(audio):
+                    break
+                offset += step * sr
+
+            return " ".join(chunks)
 
         # Run blocking transcription in thread pool
         return await asyncio.to_thread(_transcribe_sync)

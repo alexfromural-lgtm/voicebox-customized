@@ -32,12 +32,14 @@ import { AudioSampleRecording } from './AudioSampleRecording';
 import { AudioSampleSystem } from './AudioSampleSystem';
 import { AudioSampleUpload } from './AudioSampleUpload';
 
+const MAX_AUDIO_DURATION_SECONDS = 120;
+
 const sampleSchema = z.object({
   file: z.instanceof(File, { message: 'Please select an audio file' }),
   referenceText: z
     .string()
     .min(1, 'Reference text is required')
-    .max(1000, 'Reference text must be less than 1000 characters'),
+    .max(5000, 'Reference text must be less than 5000 characters'),
 });
 
 type SampleFormValues = z.infer<typeof sampleSchema>;
@@ -74,7 +76,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
     stopRecording,
     cancelRecording,
   } = useAudioRecording({
-    maxDurationSeconds: 29,
+    maxDurationSeconds: MAX_AUDIO_DURATION_SECONDS - 1,
     onRecordingComplete: (blob, recordedDuration) => {
       // Convert blob to File object
       const file = new File([blob], `recording-${Date.now()}.webm`, {
@@ -101,7 +103,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
     stopRecording: stopSystemRecording,
     cancelRecording: cancelSystemRecording,
   } = useSystemAudioCapture({
-    maxDurationSeconds: 29,
+    maxDurationSeconds: MAX_AUDIO_DURATION_SECONDS - 1,
     onRecordingComplete: (blob, recordedDuration) => {
       // Convert blob to File object
       const file = new File([blob], `system-audio-${Date.now()}.wav`, {
@@ -278,6 +280,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                       file={selectedFile}
                       isRecording={isRecording}
                       duration={duration}
+                      maxDuration={MAX_AUDIO_DURATION_SECONDS}
                       onStart={startRecording}
                       onStop={stopRecording}
                       onCancel={handleCancelRecording}
@@ -300,6 +303,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
                         file={selectedFile}
                         isRecording={isSystemRecording}
                         duration={systemDuration}
+                        maxDuration={MAX_AUDIO_DURATION_SECONDS}
                         onStart={startSystemRecording}
                         onStop={stopSystemRecording}
                         onCancel={handleCancelRecording}

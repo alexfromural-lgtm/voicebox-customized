@@ -16,7 +16,6 @@ import { usePlatform } from '@/platform/PlatformContext';
 import { useServerStore } from '@/stores/serverStore';
 import { LanguageSelect } from './LanguageSelect';
 import { SettingRow, SettingSection } from './SettingRow';
-import { ThemeSelect } from './ThemeSelect';
 
 function makeConnectionSchema(invalidUrl: string) {
   return z.object({
@@ -198,12 +197,6 @@ export function GeneralPage() {
           title={t('settings.language.label')}
           description={t('settings.language.description')}
           action={<LanguageSelect />}
-        />
-
-        <SettingRow
-          title={t('settings.theme.label')}
-          description={t('settings.theme.description')}
-          action={<ThemeSelect />}
         />
       </SettingSection>
 

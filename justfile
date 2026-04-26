@@ -110,7 +110,7 @@ dev: _ensure-venv _ensure-sidecar
         echo "Backend already running on http://localhost:17493"
     else
         echo "Starting backend on http://localhost:17493 ..."
-        {{ venv_bin }}/uvicorn backend.main:app --reload --port 17493 &
+        {{ venv_bin }}/uvicorn backend.main:app --reload --reload-dir backend --port 17493 &
         backend_pid=$!
         sleep 2
     fi
@@ -125,20 +125,29 @@ dev: _ensure-venv _ensure-sidecar
     $backendJob = $null; \
     try { $null = Invoke-WebRequest -Uri "http://127.0.0.1:17493/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop; Write-Host "Backend already running on http://localhost:17493" } catch { \
         Write-Host "Starting backend on http://localhost:17493 ..."; \
-        $backendJob = Start-Process -PassThru -NoNewWindow -FilePath "{{ python }}" -ArgumentList "-m","uvicorn","backend.main:app","--reload","--port","17493"; \
+        $backendJob = Start-Process -PassThru -NoNewWindow -FilePath "{{ python }}" -ArgumentList "-m","uvicorn","backend.main:app","--reload","--reload-dir","backend","--port","17493"; \
         Start-Sleep -Seconds 2; \
     }; \
     Write-Host "Starting Tauri desktop app..."; \
     try { Set-Location "{{ tauri_dir }}"; bun run tauri dev } finally { if ($backendJob) { taskkill /PID $backendJob.Id /T /F 2>$null | Out-Null } }
 
-# Start backend only
+# Start backend only (with hot-reload; data/ is excluded from the watcher so downloads don't trigger restarts)
 [unix]
 dev-backend: _ensure-venv
-    {{ venv_bin }}/uvicorn backend.main:app --reload --port 17493
+    {{ venv_bin }}/uvicorn backend.main:app --reload --reload-dir backend --port 17493
 
 [windows]
 dev-backend: _ensure-venv
-    & "{{ python }}" -m uvicorn backend.main:app --reload --port 17493
+    & "{{ python }}" -m uvicorn backend.main:app --reload --reload-dir backend --port 17493
+
+# Start backend without any file watching (safe for large downloads or GPU backend installs)
+[unix]
+dev-backend-no-reload: _ensure-venv
+    {{ venv_bin }}/uvicorn backend.main:app --port 17493
+
+[windows]
+dev-backend-no-reload: _ensure-venv
+    & "{{ python }}" -m uvicorn backend.main:app --port 17493
 
 # Start Tauri desktop app only (backend must be running separately)
 [unix]
@@ -160,7 +169,7 @@ dev-web: _ensure-venv
         echo "Backend already running on http://localhost:17493"
     else
         echo "Starting backend on http://localhost:17493 ..."
-        {{ venv_bin }}/uvicorn backend.main:app --reload --port 17493 &
+        {{ venv_bin }}/uvicorn backend.main:app --reload --reload-dir backend --port 17493 &
         backend_pid=$!
         sleep 2
     fi
@@ -174,7 +183,7 @@ dev-web: _ensure-venv
     $backendJob = $null; \
     try { $null = Invoke-WebRequest -Uri "http://127.0.0.1:17493/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop; Write-Host "Backend already running on http://localhost:17493" } catch { \
         Write-Host "Starting backend on http://localhost:17493 ..."; \
-        $backendJob = Start-Process -PassThru -NoNewWindow -FilePath "{{ python }}" -ArgumentList "-m","uvicorn","backend.main:app","--reload","--port","17493"; \
+        $backendJob = Start-Process -PassThru -NoNewWindow -FilePath "{{ python }}" -ArgumentList "-m","uvicorn","backend.main:app","--reload","--reload-dir","backend","--port","17493"; \
         Start-Sleep -Seconds 2; \
     }; \
     Write-Host "Starting web app..."; \
@@ -238,6 +247,15 @@ build-tauri:
 [windows]
 build-tauri:
     Set-Location "{{ tauri_dir }}"; bun run tauri build
+
+# Build Tauri desktop app without updater signing (for local/dev builds)
+[unix]
+build-tauri-local:
+    cd {{ tauri_dir }} && bun run tauri build --config src-tauri/tauri.local.conf.json
+
+[windows]
+build-tauri-local:
+    Set-Location "{{ tauri_dir }}"; bun run tauri build --config src-tauri/tauri.local.conf.json
 
 # Build web app
 [unix]

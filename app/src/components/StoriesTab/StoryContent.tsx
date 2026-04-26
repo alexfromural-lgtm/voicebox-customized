@@ -15,7 +15,7 @@ import {
 } from '@dnd-kit/sortable';
 import { Link } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Download, Music, Plus, Upload } from 'lucide-react';
+import { Download, Plus } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Loader from 'react-loaders';
@@ -23,7 +23,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useToast } from '@/components/ui/use-toast';
-import { apiClient } from '@/lib/api/client';
 import { useHistory } from '@/lib/hooks/useHistory';
 import {
   useAddStoryItem,
@@ -47,12 +46,7 @@ export function StoryContent() {
   const addStoryItem = useAddStoryItem();
   const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const importInputRef = useRef<HTMLInputElement>(null);
   const pendingCount = useGenerationStore((s) => s.pendingGenerationIds.size);
-  const addPendingGeneration = useGenerationStore((s) => s.addPendingGeneration);
-  const [isDraggingFile, setIsDraggingFile] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
-  const dragDepthRef = useRef(0);
 
   // Add generation popover state
   const [searchQuery, setSearchQuery] = useState('');
@@ -78,12 +72,8 @@ export function StoryContent() {
   // Track editor is shown when story has items
   const hasBottomBar = story && story.items.length > 0;
 
-  // Clear the floating generate box (always visible on this route) and the
-  // track editor bar when it's showing.
-  const FLOATING_BOX_CLEARANCE = 140;
-  const bottomPadding = hasBottomBar
-    ? trackEditorHeight + FLOATING_BOX_CLEARANCE
-    : FLOATING_BOX_CLEARANCE;
+  // Calculate dynamic bottom padding: track editor + gap
+  const bottomPadding = hasBottomBar ? trackEditorHeight + 24 : 0;
 
   // Drag and drop sensors
   const sensors = useSensors(
@@ -147,19 +137,6 @@ export function StoryContent() {
       lastScrolledItemRef.current = null;
     }
   }, [isPlaying]);
-
-  const handleRegenerate = async (generationId: string) => {
-    try {
-      await apiClient.regenerateGeneration(generationId);
-      addPendingGeneration(generationId);
-    } catch (error) {
-      toast({
-        title: t('storyContent.toast.regenerateFailed'),
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'destructive',
-      });
-    }
-  };
 
   const handleRemoveItem = (itemId: string) => {
     if (!story) return;
@@ -233,33 +210,6 @@ export function StoryContent() {
     );
   };
 
-  const handleImportAudio = async (file: File) => {
-    if (!story) return;
-    setIsImporting(true);
-    try {
-      const generation = await apiClient.importAudio(file);
-      await addStoryItem.mutateAsync({
-        storyId: story.id,
-        data: { generation_id: generation.id },
-      });
-      setIsAddOpen(false);
-    } catch (error) {
-      toast({
-        title: t('storyContent.toast.importFailed'),
-        description: error instanceof Error ? error.message : String(error),
-        variant: 'destructive',
-      });
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  const handleImportFiles = async (files: FileList | File[]) => {
-    for (const file of Array.from(files)) {
-      await handleImportAudio(file);
-    }
-  };
-
   const handleAddGeneration = (generationId: string) => {
     if (!story) return;
 
@@ -315,54 +265,9 @@ export function StoryContent() {
   }
 
   return (
-    <div
-      className="flex flex-col h-full min-h-0 relative overflow-hidden"
-      onDragEnter={(e) => {
-        if (!e.dataTransfer?.types.includes('Files')) return;
-        e.preventDefault();
-        dragDepthRef.current += 1;
-        setIsDraggingFile(true);
-      }}
-      onDragOver={(e) => {
-        if (e.dataTransfer?.types.includes('Files')) e.preventDefault();
-      }}
-      onDragLeave={(e) => {
-        if (!e.dataTransfer?.types.includes('Files')) return;
-        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
-        if (dragDepthRef.current === 0) setIsDraggingFile(false);
-      }}
-      onDrop={(e) => {
-        if (!e.dataTransfer?.files?.length) return;
-        e.preventDefault();
-        dragDepthRef.current = 0;
-        setIsDraggingFile(false);
-        handleImportFiles(e.dataTransfer.files);
-      }}
-    >
-      <input
-        ref={importInputRef}
-        type="file"
-        accept="audio/*,.wav,.mp3,.flac,.ogg,.m4a,.aac,.webm"
-        multiple
-        className="hidden"
-        onChange={(e) => {
-          if (e.target.files?.length) handleImportFiles(e.target.files);
-          e.target.value = '';
-        }}
-      />
-      {isDraggingFile && (
-        <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center bg-accent/10 border-2 border-dashed border-accent rounded-lg m-4">
-          <div className="flex flex-col items-center gap-2 text-accent">
-            <Music className="h-8 w-8" />
-            <span className="text-sm font-medium">{t('storyContent.dropToImport')}</span>
-          </div>
-        </div>
-      )}
-      {/* Scroll Mask */}
-      <div className="absolute top-0 left-0 right-0 h-20 bg-gradient-to-b from-background to-transparent z-10 pointer-events-none" />
-
+    <div className="flex flex-col h-full min-h-0">
       {/* Header */}
-      <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-1">
+      <div className="flex items-center justify-between mb-4 px-1">
         <div>
           <h2 className="text-2xl font-bold">{story.name}</h2>
           {story.description && (
@@ -402,23 +307,13 @@ export function StoryContent() {
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-80 p-0" align="end">
-              <div className="p-2 border-b space-y-2">
+              <div className="p-2 border-b">
                 <Input
                   placeholder={t('storyContent.searchPlaceholder')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   autoFocus
                 />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="w-full justify-start"
-                  onClick={() => importInputRef.current?.click()}
-                  disabled={isImporting}
-                >
-                  <Upload className="mr-2 h-4 w-4" />
-                  {isImporting ? t('storyContent.importing') : t('storyContent.importAudio')}
-                </Button>
               </div>
               <div className="max-h-60 overflow-y-auto">
                 {availableGenerations.length === 0 ? (
@@ -462,7 +357,7 @@ export function StoryContent() {
       {/* Content */}
       <div
         ref={scrollRef}
-        className="flex-1 min-h-0 overflow-y-auto space-y-3 pt-16 scroll-pt-16 relative z-0"
+        className="flex-1 min-h-0 overflow-y-auto space-y-3"
         style={{ paddingBottom: bottomPadding > 0 ? `${bottomPadding}px` : undefined }}
       >
         {sortedItems.length === 0 ? (
@@ -497,11 +392,6 @@ export function StoryContent() {
                       storyId={story.id}
                       index={index}
                       onRemove={() => handleRemoveItem(item.id)}
-                      onRegenerate={
-                        item.engine === 'import'
-                          ? undefined
-                          : () => handleRegenerate(item.generation_id)
-                      }
                       currentTimeMs={currentTimeMs}
                       isPlaying={isPlaying && playbackStoryId === story.id}
                     />

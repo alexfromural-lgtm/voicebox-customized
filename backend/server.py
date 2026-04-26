@@ -44,7 +44,17 @@ if getattr(sys, 'frozen', False):
 # version check doesn't block for 30+ seconds loading torch etc.
 if "--version" in sys.argv:
     from backend import __version__
-    print(f"voicebox-server {__version__}")
+    _version_line = f"voicebox-server {__version__}\n".encode()
+    # Write directly to fd 1 and fd 2 — bypasses sys.stdout/sys.stderr which
+    # may be None in a --noconsole PyInstaller binary on Windows.
+    try:
+        os.write(1, _version_line)
+    except Exception:
+        pass
+    try:
+        os.write(2, _version_line)
+    except Exception:
+        pass
     sys.exit(0)
 
 import logging
@@ -80,6 +90,34 @@ try:
     logger.info("Importing backend.main (this may take a while due to torch/transformers)...")
     from backend.main import app
     logger.info("Backend imports successful")
+
+    # ── CUDA diagnostics ──────────────────────────────────────────────
+    try:
+        import torch
+        logger.info(f"torch version      : {torch.__version__}")
+        logger.info(f"torch.cuda built   : {torch.version.cuda}")
+        cuda_avail = torch.cuda.is_available()
+        logger.info(f"cuda.is_available(): {cuda_avail}")
+        if cuda_avail:
+            logger.info(f"CUDA device count  : {torch.cuda.device_count()}")
+            logger.info(f"CUDA device 0      : {torch.cuda.get_device_name(0)}")
+        else:
+            # Try to get the failure reason from CUDA initialisation
+            try:
+                init_ok, reason = torch.cuda._check_driver()
+                logger.warning(f"CUDA init check    : ok={init_ok}, reason={reason}")
+            except Exception as _ce:
+                logger.warning(f"CUDA init probe    : {_ce}")
+            # Log NVIDIA driver info if available
+            try:
+                driver_ver = torch.version.cuda
+                logger.info(f"Expected CUDA runtime : {driver_ver}")
+            except Exception:
+                pass
+    except Exception as _te:
+        logger.error(f"torch diagnostic failed: {_te}")
+    # ─────────────────────────────────────────────────────────────────
+
 except Exception as e:
     logger.error(f"Failed to import required modules: {e}", exc_info=True)
     sys.exit(1)

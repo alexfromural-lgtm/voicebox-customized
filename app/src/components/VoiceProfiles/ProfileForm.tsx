@@ -60,7 +60,7 @@ import { AudioSampleSystem } from './AudioSampleSystem';
 import { AudioSampleUpload } from './AudioSampleUpload';
 import { SampleList } from './SampleList';
 
-const MAX_AUDIO_DURATION_SECONDS = 30;
+const MAX_AUDIO_DURATION_SECONDS = 120;
 const PRESET_ONLY_ENGINES = new Set(['kokoro', 'qwen_custom_voice']);
 const DEFAULT_ENGINE_OPTIONS = [
   { value: 'qwen', label: 'Qwen3-TTS' },
@@ -77,9 +77,8 @@ function makeProfileSchema(t: (key: string) => string) {
     name: z.string().min(1, t('profileForm.validation.nameRequired')).max(100),
     description: z.string().max(500).optional(),
     language: z.enum(LANGUAGE_CODES as [LanguageCode, ...LanguageCode[]]),
-    personality: z.string().max(2000).optional(),
     sampleFile: z.instanceof(File).optional(),
-    referenceText: z.string().max(1000).optional(),
+    referenceText: z.string().max(5000).optional(),
     avatarFile: z.instanceof(File).optional(),
   });
 
@@ -101,7 +100,6 @@ type ProfileFormValues = {
   name: string;
   description?: string;
   language: LanguageCode;
-  personality?: string;
   sampleFile?: File;
   referenceText?: string;
   avatarFile?: File;
@@ -168,7 +166,6 @@ export function ProfileForm() {
       name: '',
       description: '',
       language: 'en',
-      personality: '',
       sampleFile: undefined,
       referenceText: '',
       avatarFile: undefined,
@@ -230,7 +227,7 @@ export function ProfileForm() {
     stopRecording,
     cancelRecording,
   } = useAudioRecording({
-    maxDurationSeconds: 29,
+    maxDurationSeconds: MAX_AUDIO_DURATION_SECONDS - 1,
     onRecordingComplete: (blob, recordedDuration) => {
       const file = new File([blob], `recording-${Date.now()}.webm`, {
         type: blob.type || 'audio/webm',
@@ -256,7 +253,7 @@ export function ProfileForm() {
     stopRecording: stopSystemRecording,
     cancelRecording: cancelSystemRecording,
   } = useSystemAudioCapture({
-    maxDurationSeconds: 29,
+    maxDurationSeconds: MAX_AUDIO_DURATION_SECONDS - 1,
     onRecordingComplete: (blob, recordedDuration) => {
       const file = new File([blob], `system-audio-${Date.now()}.wav`, {
         type: blob.type || 'audio/wav',
@@ -334,7 +331,6 @@ export function ProfileForm() {
         name: editingProfile.name,
         description: editingProfile.description || '',
         language: editingProfile.language as LanguageCode,
-        personality: editingProfile.personality || '',
         sampleFile: undefined,
         referenceText: undefined,
         avatarFile: undefined,
@@ -348,7 +344,6 @@ export function ProfileForm() {
         name: profileFormDraft.name,
         description: profileFormDraft.description,
         language: profileFormDraft.language as LanguageCode,
-        personality: profileFormDraft.personality || '',
         referenceText: profileFormDraft.referenceText,
         sampleFile: undefined,
         avatarFile: undefined,
@@ -373,7 +368,6 @@ export function ProfileForm() {
         name: '',
         description: '',
         language: 'en',
-        personality: '',
         sampleFile: undefined,
         referenceText: undefined,
         avatarFile: undefined,
@@ -499,7 +493,6 @@ export function ProfileForm() {
             description: data.description,
             language: data.language,
             default_engine: defaultEngine || undefined,
-            personality: data.personality?.trim() ? data.personality.trim() : undefined,
           },
         });
 
@@ -565,7 +558,6 @@ export function ProfileForm() {
           preset_engine: selectedPresetEngine,
           preset_voice_id: selectedPresetVoiceId,
           default_engine: selectedPresetEngine,
-          personality: data.personality?.trim() ? data.personality.trim() : undefined,
         });
 
         // Handle avatar upload if provided
@@ -662,7 +654,6 @@ export function ProfileForm() {
           description: data.description,
           language: data.language,
           default_engine: defaultEngine || undefined,
-          personality: data.personality?.trim() ? data.personality.trim() : undefined,
         });
 
         // Convert non-WAV uploads to WAV so the backend can always use soundfile.
@@ -765,7 +756,6 @@ export function ProfileForm() {
           name: values.name || '',
           description: values.description || '',
           language: values.language || 'en',
-          personality: values.personality || '',
           referenceText: values.referenceText || '',
           sampleMode,
         };
@@ -828,10 +818,8 @@ export function ProfileForm() {
                       name: '',
                       description: '',
                       language: 'en',
-                      personality: '',
                       sampleFile: undefined,
                       referenceText: '',
-                      avatarFile: undefined,
                     });
                     setSampleMode('record');
                   }}
@@ -1005,6 +993,7 @@ export function ProfileForm() {
                                     file={selectedFile}
                                     isRecording={isRecording}
                                     duration={duration}
+                                    maxDuration={MAX_AUDIO_DURATION_SECONDS}
                                     onStart={startRecording}
                                     onStop={stopRecording}
                                     onCancel={handleCancelRecording}
@@ -1027,6 +1016,7 @@ export function ProfileForm() {
                                       file={selectedFile}
                                       isRecording={isSystemRecording}
                                       duration={systemDuration}
+                                      maxDuration={MAX_AUDIO_DURATION_SECONDS}
                                       onStart={startSystemRecording}
                                       onStop={stopSystemRecording}
                                       onCancel={handleCancelRecording}
@@ -1189,27 +1179,6 @@ export function ProfileForm() {
                             {...field}
                           />
                         </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="personality"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>{t('profileForm.fields.personalityLabel')}</FormLabel>
-                        <FormControl>
-                          <Textarea
-                            placeholder={t('profileForm.fields.personalityPlaceholder')}
-                            className="min-h-[96px]"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          {t('profileForm.fields.personalityHint')}
-                        </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}

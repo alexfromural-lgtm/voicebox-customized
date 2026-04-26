@@ -286,15 +286,21 @@ export function GpuPage() {
     health.gpu_type &&
     !health.gpu_type.includes('CUDA');
 
+  // Show the CUDA section whenever there's no native non-CUDA GPU active.
+  // This includes when we're already on the CUDA binary (isCurrentlyCuda=true)
+  // so that switch-to-CPU and post-download restart are always reachable.
+  const showCudaSection = !hasNativeGpu;
+
   return (
     <div className="space-y-8 max-w-2xl">
       <GpuInfoCard health={health} />
 
-      {!hasNativeGpu && !isCurrentlyCuda && (
+      {showCudaSection && (
         <SettingSection
           title={t('settings.gpu.cuda.title')}
           description={t('settings.gpu.cuda.description')}
         >
+          {/* Download / update progress — always visible regardless of active variant */}
           {cudaDownloading && downloadProgress && (
             <SettingRow title={t('settings.gpu.cuda.downloading')}>
               <div className="space-y-1.5">
@@ -340,6 +346,7 @@ export function GpuPage() {
 
           {restartPhase === 'idle' && !cudaDownloading && (
             <>
+              {/* Not yet downloaded */}
               {!cudaAvailable && !isCurrentlyCuda && (
                 <SettingRow
                   title={t('settings.gpu.download.title')}
@@ -353,6 +360,7 @@ export function GpuPage() {
                 />
               )}
 
+              {/* Downloaded but not yet active — offer to switch */}
               {cudaAvailable && !isCurrentlyCuda && platform.metadata.isTauri && (
                 <SettingRow
                   title={t('settings.gpu.switchToCuda.title')}
@@ -366,6 +374,22 @@ export function GpuPage() {
                 />
               )}
 
+              {/* CUDA binary active but GPU not available yet (e.g. libs just finished
+                  downloading) — offer a restart to pick up the new libraries */}
+              {isCurrentlyCuda && !health.gpu_available && platform.metadata.isTauri && (
+                <SettingRow
+                  title={t('settings.gpu.switchToCuda.title')}
+                  description={t('settings.gpu.switchToCuda.description')}
+                  action={
+                    <Button onClick={handleRestart} size="sm">
+                      <RotateCw className="h-3.5 w-3.5 mr-1.5" />
+                      {t('settings.gpu.switchToCuda.button')}
+                    </Button>
+                  }
+                />
+              )}
+
+              {/* CUDA active and working — offer to switch back to CPU */}
               {isCurrentlyCuda && platform.metadata.isTauri && (
                 <SettingRow
                   title={t('settings.gpu.switchToCpu.title')}
@@ -379,6 +403,7 @@ export function GpuPage() {
                 />
               )}
 
+              {/* Remove option — only when downloaded but not active */}
               {cudaAvailable && !isCurrentlyCuda && (
                 <SettingRow
                   title={t('settings.gpu.remove.title')}
@@ -388,7 +413,7 @@ export function GpuPage() {
                       onClick={handleDelete}
                       variant="ghost"
                       size="sm"
-                      className="text-muted-foreground "
+                      className="text-muted-foreground hover:text-destructive"
                     >
                       <Trash2 className="h-3.5 w-3.5 mr-1.5" />
                       {t('settings.gpu.remove.button')}

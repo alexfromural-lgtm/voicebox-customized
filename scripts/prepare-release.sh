@@ -34,7 +34,7 @@ fi
 
 echo "🔧 Setting up environment..."
 
-export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/voicebox.key)"
+export TAURI_SIGNING_PRIVATE_KEY="$(cat $HOME\.tauri\voicebox.key)"
 export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
 
 echo "✅ Environment configured"

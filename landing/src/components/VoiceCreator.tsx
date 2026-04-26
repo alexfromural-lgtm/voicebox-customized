@@ -98,8 +98,8 @@ function UploadPanel() {
             </div>
             <p className="text-xs text-muted-foreground text-center">
               Drag and drop an audio file, or click to browse.
-              <br />
-              Maximum duration: 30 seconds.
+               <br />
+               Maximum duration: 2 minutes.
             </p>
           </motion.div>
         ) : (
@@ -186,7 +186,7 @@ function RecordPanel() {
             <p className="text-xs text-muted-foreground text-center">
               Click to record from your microphone.
               <br />
-              Maximum duration: 30 seconds.
+               Maximum duration: 2 minutes.
             </p>
           </motion.div>
         )}
@@ -207,7 +207,7 @@ function RecordPanel() {
               <div className="h-3 w-3 rounded-sm bg-accent-foreground" />
               Stop Recording
             </div>
-            <p className="text-xs text-muted-foreground">{formatTime(30 - elapsed)} remaining</p>
+             <p className="text-xs text-muted-foreground">{formatTime(120 - elapsed)} remaining</p>
           </motion.div>
         )}
 
@@ -294,7 +294,7 @@ function SystemPanel() {
             <p className="text-xs text-muted-foreground text-center">
               Capture audio playing on your system.
               <br />
-              Maximum duration: 30 seconds.
+               Maximum duration: 2 minutes.
             </p>
           </motion.div>
         )}
@@ -315,7 +315,7 @@ function SystemPanel() {
               <div className="h-3 w-3 rounded-sm bg-accent-foreground" />
               Stop Capture
             </div>
-            <p className="text-xs text-muted-foreground">{formatTime(30 - elapsed)} remaining</p>
+             <p className="text-xs text-muted-foreground">{formatTime(120 - elapsed)} remaining</p>
           </motion.div>
         )}
 
@@ -384,10 +384,10 @@ export function VoiceCreator() {
           {/* Left: Copy */}
           <div>
             <h2 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl mb-4">
-              Any clip becomes a voice.
+              Clone any voice in seconds
             </h2>
             <p className="text-muted-foreground mb-6">
-              Three ways to get a sample in. Upload a clip, record from your microphone, or
+              Three ways to capture a voice sample. Upload a clip, record from your microphone, or
               capture audio playing on your system. Voicebox clones the voice from as little as 3
               seconds of audio.
             </p>
@@ -410,7 +410,7 @@ export function VoiceCreator() {
                 <div>
                   <div className="text-sm font-medium">Record from microphone</div>
                   <div className="text-xs text-muted-foreground">
-                    Live waveform preview while you record. Up to 30 seconds.
+                    Live waveform preview while you record. Up to 2 minutes.
                   </div>
                 </div>
               </div>

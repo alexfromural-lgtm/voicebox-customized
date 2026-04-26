@@ -12,6 +12,8 @@ Key differences from the Base engine:
   - Two model sizes: 1.7B and 0.6B
 
 Languages supported: zh, en, ja, ko, de, fr, ru, pt, es, it
+All 9 preset speakers can generate speech in any supported language —
+the language is passed as a parameter, not tied to the speaker identity.
 """
 
 import asyncio
@@ -55,82 +57,114 @@ QWEN_CV_HF_REPOS = {
 }
 
 
-class QwenCustomVoiceBackend:
-    """Qwen3-TTS CustomVoice backend — preset speakers with instruct control."""
+class QwenCustomVoiceBackend(TTSBackend):
+    """
+    Backend for Qwen CustomVoice TTS engine.
 
-    def __init__(self, model_size: str = "1.7B"):
+    Uses preset speakers and instruction-based control (instruct parameter)
+    to generate speech with different tones, emotions, or prosody styles.
+
+    Languages: zh, en, ja, ko, de, fr, ru, pt, es, it
+    """
+
+    ENGINE_ID = "qwen_custom_voice"
+
+    def __init__(self):
+        super().__init__()
+        self.model_size = None
+        self._current_model_size = None
         self.model = None
-        self.model_size = model_size
-        self.device = self._get_device()
-        self._current_model_size: Optional[str] = None
-
-    def _get_device(self) -> str:
-        return get_torch_device(allow_xpu=True, allow_directml=True)
+        self.processor = None
+        self.device = None
 
     def is_loaded(self) -> bool:
+        """Check if model is loaded."""
         return self.model is not None
 
-    def _get_model_path(self, model_size: str) -> str:
-        if model_size not in QWEN_CV_HF_REPOS:
-            raise ValueError(f"Unknown model size: {model_size}")
-        return QWEN_CV_HF_REPOS[model_size]
+    # All languages supported by the model regardless of speaker identity
+    SUPPORTED_LANGUAGES = ["zh", "en", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"]
 
-    def _is_model_cached(self, model_size: Optional[str] = None) -> bool:
-        size = model_size or self.model_size
-        return is_model_cached(self._get_model_path(size))
+    def get_supported_languages(self) -> list[str]:
+        """Return list of ISO language codes supported by this engine."""
+        return self.SUPPORTED_LANGUAGES
+
+    def _is_model_cached(self, model_size: str = "1.7B") -> bool:
+        """Check whether the model weights are present in the local HF cache."""
+        repo_id = QWEN_CV_HF_REPOS.get(model_size, QWEN_CV_HF_REPOS["1.7B"])
+        return is_model_cached(repo_id)
 
     async def load_model_async(self, model_size: Optional[str] = None) -> None:
-        if model_size is None:
-            model_size = self.model_size
+        """
+        Async entry point for loading (or hot-swapping) the CustomVoice model.
 
+        Offloads the blocking HF download + model init to a thread-pool worker
+        so the event loop stays responsive during the multi-second load.
+        """
+        if model_size is None:
+            model_size = self.model_size or "1.7B"
+
+        # Already loaded with the right size — nothing to do.
         if self.model is not None and self._current_model_size == model_size:
             return
 
+        # Unload stale model before loading a new size.
         if self.model is not None and self._current_model_size != model_size:
             self.unload_model()
 
         await asyncio.to_thread(self._load_model_sync, model_size)
 
-    # Alias for compatibility with the TTSBackend protocol
+    # Alias expected by load_engine_model() and get_model_load_func()
     load_model = load_model_async
 
     def _load_model_sync(self, model_size: str) -> None:
+        """Blocking model load — runs inside a thread-pool worker."""
         model_name = f"qwen-custom-voice-{model_size}"
-        is_cached = self._is_model_cached(model_size)
+        repo_id = QWEN_CV_HF_REPOS[model_size]
+        is_cached = is_model_cached(repo_id)
+
+        self.device = get_torch_device()
 
         with model_load_progress(model_name, is_cached):
-            from qwen_tts import Qwen3TTSModel
+            try:
+                from qwen_tts import Qwen3TTSModel
+            except ImportError:
+                raise RuntimeError(
+                    "Please install qwen-tts package. Run:\n  pip install qwen-tts"
+                )
 
-            model_path = self._get_model_path(model_size)
-            logger.info("Loading Qwen CustomVoice %s on %s...", model_size, self.device)
+            from huggingface_hub import constants as hf_constants
+            cache_dir = hf_constants.HF_HUB_CACHE
 
+            # Qwen3TTSModel.from_pretrained loads model + processor in one call.
             if self.device == "cpu":
                 self.model = Qwen3TTSModel.from_pretrained(
-                    model_path,
+                    repo_id,
+                    cache_dir=cache_dir,
                     torch_dtype=torch.float32,
                     low_cpu_mem_usage=False,
                 )
             else:
                 self.model = Qwen3TTSModel.from_pretrained(
-                    model_path,
+                    repo_id,
+                    cache_dir=cache_dir,
                     device_map=self.device,
                     torch_dtype=torch.bfloat16,
                 )
 
-        self._current_model_size = model_size
         self.model_size = model_size
-        logger.info("Qwen CustomVoice %s loaded successfully", model_size)
+        self._current_model_size = model_size
+        logger.info(f"QwenCustomVoice {model_size} model loaded successfully.")
 
     def unload_model(self) -> None:
+        """Release GPU memory and clear model references."""
         if self.model is not None:
             del self.model
             self.model = None
-            self._current_model_size = None
+        self._current_model_size = None
 
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
-
-            logger.info("Qwen CustomVoice unloaded")
+        from .base import empty_device_cache
+        if self.device:
+            empty_device_cache(self.device)
 
     async def create_voice_prompt(
         self,
@@ -139,12 +173,9 @@ class QwenCustomVoiceBackend:
         use_cache: bool = True,
     ) -> tuple[dict, bool]:
         """
-        Create voice prompt for CustomVoice.
-
         CustomVoice doesn't use reference audio — it uses preset speakers.
-        When called for a cloned profile (fallback), uses the default speaker.
-        For preset profiles, the voice_prompt dict is built by the profile
-        service and bypasses this method entirely.
+        Returns a minimal dict pointing at the default speaker so callers
+        that expect a voice_prompt dict still work.
         """
         return {
             "voice_type": "preset",
@@ -159,6 +190,14 @@ class QwenCustomVoiceBackend:
     ) -> tuple[np.ndarray, str]:
         return await _combine_voice_prompts(audio_paths, reference_texts)
 
+    async def get_speakers(
+        self, lang: Optional[str] = None
+    ) -> list[dict]:
+        """Return all preset speakers from the CustomVoice library."""
+        return [
+            {"speaker_id": s[0], "display_name": s[1]} for s in QWEN_CUSTOM_VOICES
+        ]
+
     async def generate(
         self,
         text: str,
@@ -171,15 +210,15 @@ class QwenCustomVoiceBackend:
         Generate audio using Qwen CustomVoice.
 
         Args:
-            text: Text to synthesize
-            voice_prompt: Dict with preset_voice_id (speaker name)
-            language: Language code (zh, en, ja, ko, etc.)
-            seed: Random seed for reproducibility
+            text: Text to synthesize.
+            voice_prompt: Dict with preset_voice_id (speaker name).
+            language: Language code (zh, en, ja, ko, ru, etc.).
+            seed: Random seed for reproducibility.
             instruct: Natural language instruction for style control
-                      (e.g. "Speak in an angry tone", "Very happy")
+                      (e.g. "Speak in an angry tone", "Very happy").
 
         Returns:
-            Tuple of (audio_array, sample_rate)
+            Tuple of (audio_array, sample_rate).
         """
         await self.load_model_async(None)
 
@@ -193,22 +232,44 @@ class QwenCustomVoiceBackend:
 
             lang_name = LANGUAGE_CODE_TO_NAME.get(language, "auto")
 
-            kwargs = {
+            gen_kwargs = {
                 "text": text,
                 "language": lang_name.capitalize() if lang_name != "auto" else "Auto",
                 "speaker": speaker,
             }
 
-            # Only pass instruct if non-empty
             if instruct:
-                kwargs["instruct"] = instruct
+                gen_kwargs["instruct"] = instruct
 
-            # Inference runs with the process's default HF_HUB_OFFLINE
-            # state. Forcing offline here (issue #462) regressed online
-            # users whose libraries issue legitimate metadata lookups
-            # during generation.
-            wavs, sample_rate = self.model.generate_custom_voice(**kwargs)
-            return wavs[0], sample_rate
+            wavs, sr = self.model.generate_custom_voice(**gen_kwargs)
+            return wavs[0], sr
 
         audio, sample_rate = await asyncio.to_thread(_generate_sync)
         return audio, sample_rate
+
+    async def get_model_info(self) -> dict:
+        """Return model metadata (size, repo URL, supported languages, etc.)."""
+        return {
+            "engine": self.ENGINE_ID,
+            "model_size": self.model_size or "unknown",
+            "repo_url": QWEN_CV_HF_REPOS.get(self.model_size, ""),
+            "languages": self.get_supported_languages(),
+            "num_speakers": len(QWEN_CUSTOM_VOICES),
+        }
+
+
+
+# ── Factory functions ─────────────────────────────────────────────────
+
+def create_qwen_custom_voice_backend(
+    model_size: str = "1.7B", device_id: Optional[int] = None, use_fp8: bool = False
+) -> QwenCustomVoiceBackend:
+    """Factory function to create a new CustomVoice backend instance."""
+    return QwenCustomVoiceBackend()
+
+
+def get_available_model_sizes() -> list[str]:
+    """Return list of available model sizes for the CustomVoice engine."""
+    return list(QWEN_CV_HF_REPOS.keys())
+
+

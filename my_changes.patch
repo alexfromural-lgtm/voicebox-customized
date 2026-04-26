@@ -1,0 +1,1251 @@
+﻿diff --git a/README.md b/README.md
+index 8d22020..2546feb 100644
+--- a/README.md
++++ b/README.md
+@@ -337,3 +337,8 @@ MIT License ΓÇö see [LICENSE](LICENSE) for details.
+ <p align="center">
+   <a href="https://voicebox.sh">voicebox.sh</a>
+ </p>
++
++just dev-backend
++just dev-frontend
++
++just build-tauri-local
+diff --git a/app/src/components/ServerTab/GpuPage.tsx b/app/src/components/ServerTab/GpuPage.tsx
+index 0caae3a..0e2e300 100644
+--- a/app/src/components/ServerTab/GpuPage.tsx
++++ b/app/src/components/ServerTab/GpuPage.tsx
+@@ -286,15 +286,21 @@ export function GpuPage() {
+     health.gpu_type &&
+     !health.gpu_type.includes('CUDA');
+ 
++  // Show the CUDA section whenever there's no native non-CUDA GPU active.
++  // This includes when we're already on the CUDA binary (isCurrentlyCuda=true)
++  // so that switch-to-CPU and post-download restart are always reachable.
++  const showCudaSection = !hasNativeGpu;
++
+   return (
+     <div className="space-y-8 max-w-2xl">
+       <GpuInfoCard health={health} />
+ 
+-      {!hasNativeGpu && !isCurrentlyCuda && (
++      {showCudaSection && (
+         <SettingSection
+           title={t('settings.gpu.cuda.title')}
+           description={t('settings.gpu.cuda.description')}
+         >
++          {/* Download / update progress ΓÇö always visible regardless of active variant */}
+           {cudaDownloading && downloadProgress && (
+             <SettingRow title={t('settings.gpu.cuda.downloading')}>
+               <div className="space-y-1.5">
+@@ -340,6 +346,7 @@ export function GpuPage() {
+ 
+           {restartPhase === 'idle' && !cudaDownloading && (
+             <>
++              {/* Not yet downloaded */}
+               {!cudaAvailable && !isCurrentlyCuda && (
+                 <SettingRow
+                   title={t('settings.gpu.download.title')}
+@@ -353,6 +360,7 @@ export function GpuPage() {
+                 />
+               )}
+ 
++              {/* Downloaded but not yet active ΓÇö offer to switch */}
+               {cudaAvailable && !isCurrentlyCuda && platform.metadata.isTauri && (
+                 <SettingRow
+                   title={t('settings.gpu.switchToCuda.title')}
+@@ -366,6 +374,22 @@ export function GpuPage() {
+                 />
+               )}
+ 
++              {/* CUDA binary active but GPU not available yet (e.g. libs just finished
++                  downloading) ΓÇö offer a restart to pick up the new libraries */}
++              {isCurrentlyCuda && !health.gpu_available && platform.metadata.isTauri && (
++                <SettingRow
++                  title={t('settings.gpu.switchToCuda.title')}
++                  description={t('settings.gpu.switchToCuda.description')}
++                  action={
++                    <Button onClick={handleRestart} size="sm">
++                      <RotateCw className="h-3.5 w-3.5 mr-1.5" />
++                      {t('settings.gpu.switchToCuda.button')}
++                    </Button>
++                  }
++                />
++              )}
++
++              {/* CUDA active and working ΓÇö offer to switch back to CPU */}
+               {isCurrentlyCuda && platform.metadata.isTauri && (
+                 <SettingRow
+                   title={t('settings.gpu.switchToCpu.title')}
+@@ -379,6 +403,7 @@ export function GpuPage() {
+                 />
+               )}
+ 
++              {/* Remove option ΓÇö only when downloaded but not active */}
+               {cudaAvailable && !isCurrentlyCuda && (
+                 <SettingRow
+                   title={t('settings.gpu.remove.title')}
+diff --git a/app/src/components/VoiceProfiles/AudioSampleRecording.tsx b/app/src/components/VoiceProfiles/AudioSampleRecording.tsx
+index d718b0d..2bc3d1f 100644
+--- a/app/src/components/VoiceProfiles/AudioSampleRecording.tsx
++++ b/app/src/components/VoiceProfiles/AudioSampleRecording.tsx
+@@ -26,6 +26,7 @@ interface AudioSampleRecordingProps {
+   file: File | null | undefined;
+   isRecording: boolean;
+   duration: number;
++  maxDuration?: number;
+   onStart: () => void;
+   onStop: () => void;
+   onCancel: () => void;
+@@ -40,6 +41,7 @@ export function AudioSampleRecording({
+   file,
+   isRecording,
+   duration,
++  maxDuration = 120,
+   onStart,
+   onStop,
+   onCancel,
+@@ -120,7 +122,7 @@ export function AudioSampleRecording({
+                 {t('audioSample.stopRecording')}
+               </Button>
+               <p className="relative z-10 text-sm text-muted-foreground text-center">
+-                {t('audioSample.remaining', { time: formatAudioDuration(30 - duration) })}
++                {t('audioSample.remaining', { time: formatAudioDuration(maxDuration - duration) })}
+               </p>
+             </div>
+           )}
+diff --git a/app/src/components/VoiceProfiles/AudioSampleSystem.tsx b/app/src/components/VoiceProfiles/AudioSampleSystem.tsx
+index c7978d4..41f6254 100644
+--- a/app/src/components/VoiceProfiles/AudioSampleSystem.tsx
++++ b/app/src/components/VoiceProfiles/AudioSampleSystem.tsx
+@@ -8,6 +8,7 @@ interface AudioSampleSystemProps {
+   file: File | null | undefined;
+   isRecording: boolean;
+   duration: number;
++  maxDuration?: number;
+   onStart: () => void;
+   onStop: () => void;
+   onCancel: () => void;
+@@ -21,6 +22,7 @@ export function AudioSampleSystem({
+   file,
+   isRecording,
+   duration,
++  maxDuration = 120,
+   onStart,
+   onStop,
+   onCancel,
+@@ -66,7 +68,7 @@ export function AudioSampleSystem({
+                 {t('audioSample.stopCapture')}
+               </Button>
+               <p className="text-sm text-muted-foreground text-center">
+-                {t('audioSample.remaining', { time: formatAudioDuration(30 - duration) })}
++                {t('audioSample.remaining', { time: formatAudioDuration(maxDuration - duration) })}
+               </p>
+             </div>
+           )}
+diff --git a/app/src/components/VoiceProfiles/ProfileCard.tsx b/app/src/components/VoiceProfiles/ProfileCard.tsx
+index 5ed74a9..9178ed7 100644
+--- a/app/src/components/VoiceProfiles/ProfileCard.tsx
++++ b/app/src/components/VoiceProfiles/ProfileCard.tsx
+@@ -62,7 +62,14 @@ export function ProfileCard({ profile, disabled }: ProfileCardProps) {
+   };
+ 
+   const handleDeleteConfirm = () => {
+-    deleteProfile.mutate(profile.id);
++    const wasSelected = isSelected;
++    deleteProfile.mutate(profile.id, {
++      onSuccess: () => {
++        if (wasSelected) {
++          setSelectedProfileId(null);
++        }
++      },
++    });
+     setDeleteDialogOpen(false);
+   };
+ 
+diff --git a/app/src/components/VoiceProfiles/ProfileForm.tsx b/app/src/components/VoiceProfiles/ProfileForm.tsx
+index c3d7681..053361a 100644
+--- a/app/src/components/VoiceProfiles/ProfileForm.tsx
++++ b/app/src/components/VoiceProfiles/ProfileForm.tsx
+@@ -60,7 +60,7 @@ import { AudioSampleSystem } from './AudioSampleSystem';
+ import { AudioSampleUpload } from './AudioSampleUpload';
+ import { SampleList } from './SampleList';
+ 
+-const MAX_AUDIO_DURATION_SECONDS = 30;
++const MAX_AUDIO_DURATION_SECONDS = 120;
+ const PRESET_ONLY_ENGINES = new Set(['kokoro', 'qwen_custom_voice']);
+ const DEFAULT_ENGINE_OPTIONS = [
+   { value: 'qwen', label: 'Qwen3-TTS' },
+@@ -78,7 +78,7 @@ function makeProfileSchema(t: (key: string) => string) {
+     description: z.string().max(500).optional(),
+     language: z.enum(LANGUAGE_CODES as [LanguageCode, ...LanguageCode[]]),
+     sampleFile: z.instanceof(File).optional(),
+-    referenceText: z.string().max(1000).optional(),
++    referenceText: z.string().max(5000).optional(),
+     avatarFile: z.instanceof(File).optional(),
+   });
+ 
+@@ -227,7 +227,7 @@ export function ProfileForm() {
+     stopRecording,
+     cancelRecording,
+   } = useAudioRecording({
+-    maxDurationSeconds: 29,
++    maxDurationSeconds: MAX_AUDIO_DURATION_SECONDS - 1,
+     onRecordingComplete: (blob, recordedDuration) => {
+       const file = new File([blob], `recording-${Date.now()}.webm`, {
+         type: blob.type || 'audio/webm',
+@@ -253,7 +253,7 @@ export function ProfileForm() {
+     stopRecording: stopSystemRecording,
+     cancelRecording: cancelSystemRecording,
+   } = useSystemAudioCapture({
+-    maxDurationSeconds: 29,
++    maxDurationSeconds: MAX_AUDIO_DURATION_SECONDS - 1,
+     onRecordingComplete: (blob, recordedDuration) => {
+       const file = new File([blob], `system-audio-${Date.now()}.wav`, {
+         type: blob.type || 'audio/wav',
+@@ -993,6 +993,7 @@ export function ProfileForm() {
+                                     file={selectedFile}
+                                     isRecording={isRecording}
+                                     duration={duration}
++                                    maxDuration={MAX_AUDIO_DURATION_SECONDS}
+                                     onStart={startRecording}
+                                     onStop={stopRecording}
+                                     onCancel={handleCancelRecording}
+@@ -1015,6 +1016,7 @@ export function ProfileForm() {
+                                       file={selectedFile}
+                                       isRecording={isSystemRecording}
+                                       duration={systemDuration}
++                                      maxDuration={MAX_AUDIO_DURATION_SECONDS}
+                                       onStart={startSystemRecording}
+                                       onStop={stopSystemRecording}
+                                       onCancel={handleCancelRecording}
+diff --git a/app/src/components/VoiceProfiles/SampleUpload.tsx b/app/src/components/VoiceProfiles/SampleUpload.tsx
+index 3c53b7d..375b9d2 100644
+--- a/app/src/components/VoiceProfiles/SampleUpload.tsx
++++ b/app/src/components/VoiceProfiles/SampleUpload.tsx
+@@ -32,12 +32,14 @@ import { AudioSampleRecording } from './AudioSampleRecording';
+ import { AudioSampleSystem } from './AudioSampleSystem';
+ import { AudioSampleUpload } from './AudioSampleUpload';
+ 
++const MAX_AUDIO_DURATION_SECONDS = 120;
++
+ const sampleSchema = z.object({
+   file: z.instanceof(File, { message: 'Please select an audio file' }),
+   referenceText: z
+     .string()
+     .min(1, 'Reference text is required')
+-    .max(1000, 'Reference text must be less than 1000 characters'),
++    .max(5000, 'Reference text must be less than 5000 characters'),
+ });
+ 
+ type SampleFormValues = z.infer<typeof sampleSchema>;
+@@ -74,7 +76,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
+     stopRecording,
+     cancelRecording,
+   } = useAudioRecording({
+-    maxDurationSeconds: 29,
++    maxDurationSeconds: MAX_AUDIO_DURATION_SECONDS - 1,
+     onRecordingComplete: (blob, recordedDuration) => {
+       // Convert blob to File object
+       const file = new File([blob], `recording-${Date.now()}.webm`, {
+@@ -101,7 +103,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
+     stopRecording: stopSystemRecording,
+     cancelRecording: cancelSystemRecording,
+   } = useSystemAudioCapture({
+-    maxDurationSeconds: 29,
++    maxDurationSeconds: MAX_AUDIO_DURATION_SECONDS - 1,
+     onRecordingComplete: (blob, recordedDuration) => {
+       // Convert blob to File object
+       const file = new File([blob], `system-audio-${Date.now()}.wav`, {
+@@ -278,6 +280,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
+                       file={selectedFile}
+                       isRecording={isRecording}
+                       duration={duration}
++                      maxDuration={MAX_AUDIO_DURATION_SECONDS}
+                       onStart={startRecording}
+                       onStop={stopRecording}
+                       onCancel={handleCancelRecording}
+@@ -300,6 +303,7 @@ export function SampleUpload({ profileId, open, onOpenChange }: SampleUploadProp
+                         file={selectedFile}
+                         isRecording={isSystemRecording}
+                         duration={systemDuration}
++                        maxDuration={MAX_AUDIO_DURATION_SECONDS}
+                         onStart={startSystemRecording}
+                         onStop={stopSystemRecording}
+                         onCancel={handleCancelRecording}
+diff --git a/backend/backends/pytorch_backend.py b/backend/backends/pytorch_backend.py
+index f8ae79b..4b05b8a 100644
+--- a/backend/backends/pytorch_backend.py
++++ b/backend/backends/pytorch_backend.py
+@@ -335,44 +335,84 @@ class PyTorchSTTBackend:
+ 
+         def _transcribe_sync():
+             """Run synchronous transcription in thread pool."""
+-            # Load audio
++            # Load audio via librosa (no ffmpeg dependency) at Whisper's
++            # required 16 kHz sample rate.
+             audio, _sr = load_audio(audio_path, sample_rate=16000)
+ 
+-            # Inference runs with the process's default HF_HUB_OFFLINE
+-            # state ΓÇö forcing offline here (issue #462) broke online users
+-            # whose `get_decoder_prompt_ids` / tokenizer calls issue
+-            # legitimate metadata lookups.
+-            # Process audio
+-            inputs = self.processor(
+-                audio,
+-                sampling_rate=16000,
+-                return_tensors="pt",
+-            )
+-            inputs = inputs.to(self.device)
+-
+-            # Generate transcription
+-            # If language is provided, force it; otherwise let Whisper auto-detect
+-            generate_kwargs = {}
+-            if language:
+-                forced_decoder_ids = self.processor.get_decoder_prompt_ids(
+-                    language=language,
+-                    task="transcribe",
+-                )
+-                generate_kwargs["forced_decoder_ids"] = forced_decoder_ids
++            audio_duration = len(audio) / 16000
++            whisper_window = 30  # seconds ΓÇö Whisper's native context window
+ 
+-            with torch.no_grad():
+-                predicted_ids = self.model.generate(
+-                    inputs["input_features"],
+-                    **generate_kwargs,
++            if audio_duration <= whisper_window:
++                # Short audio: single-pass inference, fastest path.
++                inputs = self.processor(
++                    audio,
++                    sampling_rate=16000,
++                    return_tensors="pt",
+                 )
+-
+-            # Decode
+-            transcription = self.processor.batch_decode(
+-                predicted_ids,
+-                skip_special_tokens=True,
+-            )[0]
+-
+-            return transcription.strip()
++                inputs = inputs.to(self.device)
++
++                generate_kwargs = {}
++                if language:
++                    forced_decoder_ids = self.processor.get_decoder_prompt_ids(
++                        language=language,
++                        task="transcribe",
++                    )
++                    generate_kwargs["forced_decoder_ids"] = forced_decoder_ids
++
++                with torch.no_grad():
++                    predicted_ids = self.model.generate(
++                        inputs["input_features"],
++                        **generate_kwargs,
++                    )
++
++                return self.processor.batch_decode(
++                    predicted_ids, skip_special_tokens=True
++                )[0].strip()
++
++            # Long audio: slide a 30 s window with 5 s overlap and join chunks.
++            stride = 5  # seconds overlap on each side
++            step = whisper_window - stride  # advance per chunk
++            chunks = []
++            offset = 0
++            sr = 16000
++
++            while offset < len(audio):
++                end = min(offset + whisper_window * sr, len(audio))
++                chunk = audio[offset:end]
++
++                inputs = self.processor(
++                    chunk,
++                    sampling_rate=sr,
++                    return_tensors="pt",
++                )
++                inputs = inputs.to(self.device)
++
++                generate_kwargs = {}
++                if language:
++                    forced_decoder_ids = self.processor.get_decoder_prompt_ids(
++                        language=language,
++                        task="transcribe",
++                    )
++                    generate_kwargs["forced_decoder_ids"] = forced_decoder_ids
++
++                with torch.no_grad():
++                    predicted_ids = self.model.generate(
++                        inputs["input_features"],
++                        **generate_kwargs,
++                    )
++
++                text = self.processor.batch_decode(
++                    predicted_ids, skip_special_tokens=True
++                )[0].strip()
++
++                if text:
++                    chunks.append(text)
++
++                if end == len(audio):
++                    break
++                offset += step * sr
++
++            return " ".join(chunks)
+ 
+         # Run blocking transcription in thread pool
+         return await asyncio.to_thread(_transcribe_sync)
+diff --git a/backend/backends/qwen_custom_voice_backend.py b/backend/backends/qwen_custom_voice_backend.py
+index 74f739b..301f1a9 100644
+--- a/backend/backends/qwen_custom_voice_backend.py
++++ b/backend/backends/qwen_custom_voice_backend.py
+@@ -12,6 +12,8 @@ Key differences from the Base engine:
+   - Two model sizes: 1.7B and 0.6B
+ 
+ Languages supported: zh, en, ja, ko, de, fr, ru, pt, es, it
++All 9 preset speakers can generate speech in any supported language ΓÇö
++the language is passed as a parameter, not tied to the speaker identity.
+ """
+ 
+ import asyncio
+@@ -55,82 +57,114 @@ QWEN_CV_HF_REPOS = {
+ }
+ 
+ 
+-class QwenCustomVoiceBackend:
+-    """Qwen3-TTS CustomVoice backend ΓÇö preset speakers with instruct control."""
++class QwenCustomVoiceBackend(TTSBackend):
++    """
++    Backend for Qwen CustomVoice TTS engine.
+ 
+-    def __init__(self, model_size: str = "1.7B"):
+-        self.model = None
+-        self.model_size = model_size
+-        self.device = self._get_device()
+-        self._current_model_size: Optional[str] = None
++    Uses preset speakers and instruction-based control (instruct parameter)
++    to generate speech with different tones, emotions, or prosody styles.
+ 
+-    def _get_device(self) -> str:
+-        return get_torch_device(allow_xpu=True, allow_directml=True)
++    Languages: zh, en, ja, ko, de, fr, ru, pt, es, it
++    """
++
++    ENGINE_ID = "qwen_custom_voice"
++
++    def __init__(self):
++        super().__init__()
++        self.model_size = None
++        self._current_model_size = None
++        self.model = None
++        self.processor = None
++        self.device = None
+ 
+     def is_loaded(self) -> bool:
++        """Check if model is loaded."""
+         return self.model is not None
+ 
+-    def _get_model_path(self, model_size: str) -> str:
+-        if model_size not in QWEN_CV_HF_REPOS:
+-            raise ValueError(f"Unknown model size: {model_size}")
+-        return QWEN_CV_HF_REPOS[model_size]
++    # All languages supported by the model regardless of speaker identity
++    SUPPORTED_LANGUAGES = ["zh", "en", "ja", "ko", "de", "fr", "ru", "pt", "es", "it"]
++
++    def get_supported_languages(self) -> list[str]:
++        """Return list of ISO language codes supported by this engine."""
++        return self.SUPPORTED_LANGUAGES
+ 
+-    def _is_model_cached(self, model_size: Optional[str] = None) -> bool:
+-        size = model_size or self.model_size
+-        return is_model_cached(self._get_model_path(size))
++    def _is_model_cached(self, model_size: str = "1.7B") -> bool:
++        """Check whether the model weights are present in the local HF cache."""
++        repo_id = QWEN_CV_HF_REPOS.get(model_size, QWEN_CV_HF_REPOS["1.7B"])
++        return is_model_cached(repo_id)
+ 
+     async def load_model_async(self, model_size: Optional[str] = None) -> None:
++        """
++        Async entry point for loading (or hot-swapping) the CustomVoice model.
++
++        Offloads the blocking HF download + model init to a thread-pool worker
++        so the event loop stays responsive during the multi-second load.
++        """
+         if model_size is None:
+-            model_size = self.model_size
++            model_size = self.model_size or "1.7B"
+ 
++        # Already loaded with the right size ΓÇö nothing to do.
+         if self.model is not None and self._current_model_size == model_size:
+             return
+ 
++        # Unload stale model before loading a new size.
+         if self.model is not None and self._current_model_size != model_size:
+             self.unload_model()
+ 
+         await asyncio.to_thread(self._load_model_sync, model_size)
+ 
+-    # Alias for compatibility with the TTSBackend protocol
++    # Alias expected by load_engine_model() and get_model_load_func()
+     load_model = load_model_async
+ 
+     def _load_model_sync(self, model_size: str) -> None:
++        """Blocking model load ΓÇö runs inside a thread-pool worker."""
+         model_name = f"qwen-custom-voice-{model_size}"
+-        is_cached = self._is_model_cached(model_size)
++        repo_id = QWEN_CV_HF_REPOS[model_size]
++        is_cached = is_model_cached(repo_id)
++
++        self.device = get_torch_device()
+ 
+         with model_load_progress(model_name, is_cached):
+-            from qwen_tts import Qwen3TTSModel
++            try:
++                from qwen_tts import Qwen3TTSModel
++            except ImportError:
++                raise RuntimeError(
++                    "Please install qwen-tts package. Run:\n  pip install qwen-tts"
++                )
+ 
+-            model_path = self._get_model_path(model_size)
+-            logger.info("Loading Qwen CustomVoice %s on %s...", model_size, self.device)
++            from huggingface_hub import constants as hf_constants
++            cache_dir = hf_constants.HF_HUB_CACHE
+ 
++            # Qwen3TTSModel.from_pretrained loads model + processor in one call.
+             if self.device == "cpu":
+                 self.model = Qwen3TTSModel.from_pretrained(
+-                    model_path,
++                    repo_id,
++                    cache_dir=cache_dir,
+                     torch_dtype=torch.float32,
+                     low_cpu_mem_usage=False,
+                 )
+             else:
+                 self.model = Qwen3TTSModel.from_pretrained(
+-                    model_path,
++                    repo_id,
++                    cache_dir=cache_dir,
+                     device_map=self.device,
+                     torch_dtype=torch.bfloat16,
+                 )
+ 
+-        self._current_model_size = model_size
+         self.model_size = model_size
+-        logger.info("Qwen CustomVoice %s loaded successfully", model_size)
++        self._current_model_size = model_size
++        logger.info(f"QwenCustomVoice {model_size} model loaded successfully.")
+ 
+     def unload_model(self) -> None:
++        """Release GPU memory and clear model references."""
+         if self.model is not None:
+             del self.model
+             self.model = None
+-            self._current_model_size = None
++        self._current_model_size = None
+ 
+-            if torch.cuda.is_available():
+-                torch.cuda.empty_cache()
+-
+-            logger.info("Qwen CustomVoice unloaded")
++        from .base import empty_device_cache
++        if self.device:
++            empty_device_cache(self.device)
+ 
+     async def create_voice_prompt(
+         self,
+@@ -139,12 +173,9 @@ class QwenCustomVoiceBackend:
+         use_cache: bool = True,
+     ) -> tuple[dict, bool]:
+         """
+-        Create voice prompt for CustomVoice.
+-
+         CustomVoice doesn't use reference audio ΓÇö it uses preset speakers.
+-        When called for a cloned profile (fallback), uses the default speaker.
+-        For preset profiles, the voice_prompt dict is built by the profile
+-        service and bypasses this method entirely.
++        Returns a minimal dict pointing at the default speaker so callers
++        that expect a voice_prompt dict still work.
+         """
+         return {
+             "voice_type": "preset",
+@@ -159,6 +190,14 @@ class QwenCustomVoiceBackend:
+     ) -> tuple[np.ndarray, str]:
+         return await _combine_voice_prompts(audio_paths, reference_texts)
+ 
++    async def get_speakers(
++        self, lang: Optional[str] = None
++    ) -> list[dict]:
++        """Return all preset speakers from the CustomVoice library."""
++        return [
++            {"speaker_id": s[0], "display_name": s[1]} for s in QWEN_CUSTOM_VOICES
++        ]
++
+     async def generate(
+         self,
+         text: str,
+@@ -171,15 +210,15 @@ class QwenCustomVoiceBackend:
+         Generate audio using Qwen CustomVoice.
+ 
+         Args:
+-            text: Text to synthesize
+-            voice_prompt: Dict with preset_voice_id (speaker name)
+-            language: Language code (zh, en, ja, ko, etc.)
+-            seed: Random seed for reproducibility
++            text: Text to synthesize.
++            voice_prompt: Dict with preset_voice_id (speaker name).
++            language: Language code (zh, en, ja, ko, ru, etc.).
++            seed: Random seed for reproducibility.
+             instruct: Natural language instruction for style control
+-                      (e.g. "Speak in an angry tone", "Very happy")
++                      (e.g. "Speak in an angry tone", "Very happy").
+ 
+         Returns:
+-            Tuple of (audio_array, sample_rate)
++            Tuple of (audio_array, sample_rate).
+         """
+         await self.load_model_async(None)
+ 
+@@ -193,22 +232,44 @@ class QwenCustomVoiceBackend:
+ 
+             lang_name = LANGUAGE_CODE_TO_NAME.get(language, "auto")
+ 
+-            kwargs = {
++            gen_kwargs = {
+                 "text": text,
+                 "language": lang_name.capitalize() if lang_name != "auto" else "Auto",
+                 "speaker": speaker,
+             }
+ 
+-            # Only pass instruct if non-empty
+             if instruct:
+-                kwargs["instruct"] = instruct
++                gen_kwargs["instruct"] = instruct
+ 
+-            # Inference runs with the process's default HF_HUB_OFFLINE
+-            # state. Forcing offline here (issue #462) regressed online
+-            # users whose libraries issue legitimate metadata lookups
+-            # during generation.
+-            wavs, sample_rate = self.model.generate_custom_voice(**kwargs)
+-            return wavs[0], sample_rate
++            wavs, sr = self.model.generate_custom_voice(**gen_kwargs)
++            return wavs[0], sr
+ 
+         audio, sample_rate = await asyncio.to_thread(_generate_sync)
+         return audio, sample_rate
++
++    async def get_model_info(self) -> dict:
++        """Return model metadata (size, repo URL, supported languages, etc.)."""
++        return {
++            "engine": self.ENGINE_ID,
++            "model_size": self.model_size or "unknown",
++            "repo_url": QWEN_CV_HF_REPOS.get(self.model_size, ""),
++            "languages": self.get_supported_languages(),
++            "num_speakers": len(QWEN_CUSTOM_VOICES),
++        }
++
++
++
++# ΓöÇΓöÇ Factory functions ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
++def create_qwen_custom_voice_backend(
++    model_size: str = "1.7B", device_id: Optional[int] = None, use_fp8: bool = False
++) -> QwenCustomVoiceBackend:
++    """Factory function to create a new CustomVoice backend instance."""
++    return QwenCustomVoiceBackend()
++
++
++def get_available_model_sizes() -> list[str]:
++    """Return list of available model sizes for the CustomVoice engine."""
++    return list(QWEN_CV_HF_REPOS.keys())
++
++
+diff --git a/backend/models.py b/backend/models.py
+index f2b590d..610c9a3 100644
+--- a/backend/models.py
++++ b/backend/models.py
+@@ -48,13 +48,13 @@ class VoiceProfileResponse(BaseModel):
+ class ProfileSampleCreate(BaseModel):
+     """Request model for adding a sample to a profile."""
+ 
+-    reference_text: str = Field(..., min_length=1, max_length=1000)
++    reference_text: str = Field(..., min_length=1, max_length=5000)
+ 
+ 
+ class ProfileSampleUpdate(BaseModel):
+     """Request model for updating a profile sample."""
+ 
+-    reference_text: str = Field(..., min_length=1, max_length=1000)
++    reference_text: str = Field(..., min_length=1, max_length=5000)
+ 
+ 
+ class ProfileSampleResponse(BaseModel):
+diff --git a/backend/requirements.txt b/backend/requirements.txt
+index 9051645..36e2c99 100644
+--- a/backend/requirements.txt
++++ b/backend/requirements.txt
+@@ -55,8 +55,8 @@ unidic-lite>=1.0.8
+ # Audio processing
+ librosa>=0.10.0
+ soundfile>=0.12.0
+-numpy>=1.24.0,<2.0
+-numba>=0.60.0,<0.61.0
++numpy>=1.24.0
++numba>=0.61.0
+ pedalboard>=0.9.0
+ 
+ # HTTP client (for CUDA backend download)
+diff --git a/backend/server.py b/backend/server.py
+index 5f8cc0f..895c969 100644
+--- a/backend/server.py
++++ b/backend/server.py
+@@ -44,7 +44,17 @@ if getattr(sys, 'frozen', False):
+ # version check doesn't block for 30+ seconds loading torch etc.
+ if "--version" in sys.argv:
+     from backend import __version__
+-    print(f"voicebox-server {__version__}")
++    _version_line = f"voicebox-server {__version__}\n".encode()
++    # Write directly to fd 1 and fd 2 ΓÇö bypasses sys.stdout/sys.stderr which
++    # may be None in a --noconsole PyInstaller binary on Windows.
++    try:
++        os.write(1, _version_line)
++    except Exception:
++        pass
++    try:
++        os.write(2, _version_line)
++    except Exception:
++        pass
+     sys.exit(0)
+ 
+ import logging
+@@ -80,6 +90,34 @@ try:
+     logger.info("Importing backend.main (this may take a while due to torch/transformers)...")
+     from backend.main import app
+     logger.info("Backend imports successful")
++
++    # ΓöÇΓöÇ CUDA diagnostics ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++    try:
++        import torch
++        logger.info(f"torch version      : {torch.__version__}")
++        logger.info(f"torch.cuda built   : {torch.version.cuda}")
++        cuda_avail = torch.cuda.is_available()
++        logger.info(f"cuda.is_available(): {cuda_avail}")
++        if cuda_avail:
++            logger.info(f"CUDA device count  : {torch.cuda.device_count()}")
++            logger.info(f"CUDA device 0      : {torch.cuda.get_device_name(0)}")
++        else:
++            # Try to get the failure reason from CUDA initialisation
++            try:
++                init_ok, reason = torch.cuda._check_driver()
++                logger.warning(f"CUDA init check    : ok={init_ok}, reason={reason}")
++            except Exception as _ce:
++                logger.warning(f"CUDA init probe    : {_ce}")
++            # Log NVIDIA driver info if available
++            try:
++                driver_ver = torch.version.cuda
++                logger.info(f"Expected CUDA runtime : {driver_ver}")
++            except Exception:
++                pass
++    except Exception as _te:
++        logger.error(f"torch diagnostic failed: {_te}")
++    # ΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇΓöÇ
++
+ except Exception as e:
+     logger.error(f"Failed to import required modules: {e}", exc_info=True)
+     sys.exit(1)
+diff --git a/backend/utils/audio.py b/backend/utils/audio.py
+index 7e0fd6f..65d5f8a 100644
+--- a/backend/utils/audio.py
++++ b/backend/utils/audio.py
+@@ -262,7 +262,7 @@ def preprocess_reference_audio(
+ def validate_reference_audio(
+     audio_path: str,
+     min_duration: float = 2.0,
+-    max_duration: float = 30.0,
++    max_duration: float = 120.0,
+     min_rms: float = 0.01,
+ ) -> Tuple[bool, Optional[str]]:
+     """
+@@ -286,7 +286,7 @@ def validate_reference_audio(
+ def validate_and_load_reference_audio(
+     audio_path: str,
+     min_duration: float = 2.0,
+-    max_duration: float = 30.0,
++    max_duration: float = 120.0,
+     min_rms: float = 0.01,
+ ) -> Tuple[bool, Optional[str], Optional[np.ndarray], Optional[int]]:
+     """
+diff --git a/justfile b/justfile
+index d178d16..9a89bc5 100644
+--- a/justfile
++++ b/justfile
+@@ -110,7 +110,7 @@ dev: _ensure-venv _ensure-sidecar
+         echo "Backend already running on http://localhost:17493"
+     else
+         echo "Starting backend on http://localhost:17493 ..."
+-        {{ venv_bin }}/uvicorn backend.main:app --reload --port 17493 &
++        {{ venv_bin }}/uvicorn backend.main:app --reload --reload-dir backend --port 17493 &
+         backend_pid=$!
+         sleep 2
+     fi
+@@ -125,20 +125,29 @@ dev: _ensure-venv _ensure-sidecar
+     $backendJob = $null; \
+     try { $null = Invoke-WebRequest -Uri "http://127.0.0.1:17493/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop; Write-Host "Backend already running on http://localhost:17493" } catch { \
+         Write-Host "Starting backend on http://localhost:17493 ..."; \
+-        $backendJob = Start-Process -PassThru -NoNewWindow -FilePath "{{ python }}" -ArgumentList "-m","uvicorn","backend.main:app","--reload","--port","17493"; \
++        $backendJob = Start-Process -PassThru -NoNewWindow -FilePath "{{ python }}" -ArgumentList "-m","uvicorn","backend.main:app","--reload","--reload-dir","backend","--port","17493"; \
+         Start-Sleep -Seconds 2; \
+     }; \
+     Write-Host "Starting Tauri desktop app..."; \
+     try { Set-Location "{{ tauri_dir }}"; bun run tauri dev } finally { if ($backendJob) { taskkill /PID $backendJob.Id /T /F 2>$null | Out-Null } }
+ 
+-# Start backend only
++# Start backend only (with hot-reload; data/ is excluded from the watcher so downloads don't trigger restarts)
+ [unix]
+ dev-backend: _ensure-venv
+-    {{ venv_bin }}/uvicorn backend.main:app --reload --port 17493
++    {{ venv_bin }}/uvicorn backend.main:app --reload --reload-dir backend --port 17493
+ 
+ [windows]
+ dev-backend: _ensure-venv
+-    & "{{ python }}" -m uvicorn backend.main:app --reload --port 17493
++    & "{{ python }}" -m uvicorn backend.main:app --reload --reload-dir backend --port 17493
++
++# Start backend without any file watching (safe for large downloads or GPU backend installs)
++[unix]
++dev-backend-no-reload: _ensure-venv
++    {{ venv_bin }}/uvicorn backend.main:app --port 17493
++
++[windows]
++dev-backend-no-reload: _ensure-venv
++    & "{{ python }}" -m uvicorn backend.main:app --port 17493
+ 
+ # Start Tauri desktop app only (backend must be running separately)
+ [unix]
+@@ -160,7 +169,7 @@ dev-web: _ensure-venv
+         echo "Backend already running on http://localhost:17493"
+     else
+         echo "Starting backend on http://localhost:17493 ..."
+-        {{ venv_bin }}/uvicorn backend.main:app --reload --port 17493 &
++        {{ venv_bin }}/uvicorn backend.main:app --reload --reload-dir backend --port 17493 &
+         backend_pid=$!
+         sleep 2
+     fi
+@@ -174,7 +183,7 @@ dev-web: _ensure-venv
+     $backendJob = $null; \
+     try { $null = Invoke-WebRequest -Uri "http://127.0.0.1:17493/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction Stop; Write-Host "Backend already running on http://localhost:17493" } catch { \
+         Write-Host "Starting backend on http://localhost:17493 ..."; \
+-        $backendJob = Start-Process -PassThru -NoNewWindow -FilePath "{{ python }}" -ArgumentList "-m","uvicorn","backend.main:app","--reload","--port","17493"; \
++        $backendJob = Start-Process -PassThru -NoNewWindow -FilePath "{{ python }}" -ArgumentList "-m","uvicorn","backend.main:app","--reload","--reload-dir","backend","--port","17493"; \
+         Start-Sleep -Seconds 2; \
+     }; \
+     Write-Host "Starting web app..."; \
+@@ -239,6 +248,15 @@ build-tauri:
+ build-tauri:
+     Set-Location "{{ tauri_dir }}"; bun run tauri build
+ 
++# Build Tauri desktop app without updater signing (for local/dev builds)
++[unix]
++build-tauri-local:
++    cd {{ tauri_dir }} && bun run tauri build --config src-tauri/tauri.local.conf.json
++
++[windows]
++build-tauri-local:
++    Set-Location "{{ tauri_dir }}"; bun run tauri build --config src-tauri/tauri.local.conf.json
++
+ # Build web app
+ [unix]
+ build-web:
+diff --git a/landing/src/components/VoiceCreator.tsx b/landing/src/components/VoiceCreator.tsx
+index 8685596..70ae095 100644
+--- a/landing/src/components/VoiceCreator.tsx
++++ b/landing/src/components/VoiceCreator.tsx
+@@ -98,8 +98,8 @@ function UploadPanel() {
+             </div>
+             <p className="text-xs text-muted-foreground text-center">
+               Drag and drop an audio file, or click to browse.
+-              <br />
+-              Maximum duration: 30 seconds.
++               <br />
++               Maximum duration: 2 minutes.
+             </p>
+           </motion.div>
+         ) : (
+@@ -186,7 +186,7 @@ function RecordPanel() {
+             <p className="text-xs text-muted-foreground text-center">
+               Click to record from your microphone.
+               <br />
+-              Maximum duration: 30 seconds.
++               Maximum duration: 2 minutes.
+             </p>
+           </motion.div>
+         )}
+@@ -207,7 +207,7 @@ function RecordPanel() {
+               <div className="h-3 w-3 rounded-sm bg-accent-foreground" />
+               Stop Recording
+             </div>
+-            <p className="text-xs text-muted-foreground">{formatTime(30 - elapsed)} remaining</p>
++             <p className="text-xs text-muted-foreground">{formatTime(120 - elapsed)} remaining</p>
+           </motion.div>
+         )}
+ 
+@@ -294,7 +294,7 @@ function SystemPanel() {
+             <p className="text-xs text-muted-foreground text-center">
+               Capture audio playing on your system.
+               <br />
+-              Maximum duration: 30 seconds.
++               Maximum duration: 2 minutes.
+             </p>
+           </motion.div>
+         )}
+@@ -315,7 +315,7 @@ function SystemPanel() {
+               <div className="h-3 w-3 rounded-sm bg-accent-foreground" />
+               Stop Capture
+             </div>
+-            <p className="text-xs text-muted-foreground">{formatTime(30 - elapsed)} remaining</p>
++             <p className="text-xs text-muted-foreground">{formatTime(120 - elapsed)} remaining</p>
+           </motion.div>
+         )}
+ 
+@@ -410,7 +410,7 @@ export function VoiceCreator() {
+                 <div>
+                   <div className="text-sm font-medium">Record from microphone</div>
+                   <div className="text-xs text-muted-foreground">
+-                    Live waveform preview while you record. Up to 30 seconds.
++                    Live waveform preview while you record. Up to 2 minutes.
+                   </div>
+                 </div>
+               </div>
+diff --git a/scripts/prepare-release.sh b/scripts/prepare-release.sh
+index cc5e848..b9a4886 100755
+--- a/scripts/prepare-release.sh
++++ b/scripts/prepare-release.sh
+@@ -34,7 +34,7 @@ fi
+ 
+ echo "≡ƒöº Setting up environment..."
+ 
+-export TAURI_SIGNING_PRIVATE_KEY="$(cat ~/.tauri/voicebox.key)"
++export TAURI_SIGNING_PRIVATE_KEY="$(cat $HOME\.tauri\voicebox.key)"
+ export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+ 
+ echo "Γ£à Environment configured"
+diff --git a/tauri/src-tauri/Cargo.lock b/tauri/src-tauri/Cargo.lock
+index 59b776b..4d8c19d 100644
+--- a/tauri/src-tauri/Cargo.lock
++++ b/tauri/src-tauri/Cargo.lock
+@@ -5041,7 +5041,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+ 
+ [[package]]
+ name = "voicebox"
+-version = "0.4.3"
++version = "0.4.5"
+ dependencies = [
+  "base64 0.22.1",
+  "core-foundation-sys",
+diff --git a/tauri/src-tauri/src/main.rs b/tauri/src-tauri/src/main.rs
+index ca0cdf0..401a2c8 100644
+--- a/tauri/src-tauri/src/main.rs
++++ b/tauri/src-tauri/src/main.rs
+@@ -20,6 +20,30 @@ const SERVER_PORT: u16 = 17493;
+ /// Replaces the previous `netstat -ano` approach which failed on systems with
+ /// corrupted system DLLs (see #277).
+ #[cfg(windows)]
++/// Find the PID of *any* process listening on `port`, regardless of name.
++#[cfg(windows)]
++fn find_any_pid_on_port(port: u16) -> Option<u32> {
++    use std::process::Command;
++    let ps_script = format!(
++        "Get-NetTCPConnection -LocalPort {} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess",
++        port
++    );
++    if let Ok(output) = Command::new("powershell")
++        .args(["-NoProfile", "-Command", &ps_script])
++        .output()
++    {
++        let output_str = String::from_utf8_lossy(&output.stdout);
++        for line in output_str.lines() {
++            if let Ok(pid) = line.trim().parse::<u32>() {
++                if pid > 0 {
++                    return Some(pid);
++                }
++            }
++        }
++    }
++    None
++}
++
+ fn find_voicebox_pid_on_port(port: u16) -> Option<u32> {
+     use std::process::Command;
+ 
+@@ -61,29 +85,30 @@ fn find_voicebox_pid_on_port(port: u16) -> Option<u32> {
+ /// must be present as booleans. This prevents misidentifying an unrelated
+ /// service that happens to expose a `/health` endpoint.
+ #[allow(dead_code)] // Used in platform-specific cfg blocks
+-fn check_health(port: u16) -> bool {
++async fn check_health(port: u16) -> bool {
+     let url = format!("http://127.0.0.1:{}/health", port);
+-    match reqwest::blocking::Client::builder()
++    let client = match reqwest::Client::builder()
+         .timeout(std::time::Duration::from_secs(3))
+         .build()
+     {
+-        Ok(client) => match client.get(&url).send() {
+-            Ok(resp) => {
+-                if !resp.status().is_success() {
+-                    return false;
+-                }
+-                // Parse as JSON and validate Voicebox-specific fields
+-                match resp.json::<serde_json::Value>() {
+-                    Ok(body) => {
+-                        body.get("status").and_then(|v| v.as_str()) == Some("healthy")
+-                            && body.get("model_loaded").map(|v| v.is_boolean()).unwrap_or(false)
+-                            && body.get("gpu_available").map(|v| v.is_boolean()).unwrap_or(false)
+-                    }
+-                    Err(_) => false,
++        Ok(c) => c,
++        Err(_) => return false,
++    };
++    match client.get(&url).send().await {
++        Ok(resp) => {
++            if !resp.status().is_success() {
++                return false;
++            }
++            // Parse as JSON and validate Voicebox-specific fields
++            match resp.json::<serde_json::Value>().await {
++                Ok(body) => {
++                    body.get("status").and_then(|v| v.as_str()) == Some("healthy")
++                        && body.get("model_loaded").map(|v| v.is_boolean()).unwrap_or(false)
++                        && body.get("gpu_available").map(|v| v.is_boolean()).unwrap_or(false)
+                 }
++                Err(_) => false,
+             }
+-            Err(_) => false,
+-        },
++        }
+         Err(_) => false,
+     }
+ }
+@@ -141,7 +166,7 @@ async fn start_server(
+                         // Process name doesn't contain "voicebox" ΓÇö could be an external
+                         // Python/uvicorn/Docker server. Verify via HTTP health check.
+                         println!("Port {} in use by '{}' (PID: {}), checking if it's a Voicebox server...", SERVER_PORT, command, pid_str);
+-                        if check_health(SERVER_PORT) {
++                        if check_health(SERVER_PORT).await {
+                             println!("Health check passed ΓÇö reusing external server on port {}", SERVER_PORT);
+                             return Ok(format!("http://127.0.0.1:{}", SERVER_PORT));
+                         }
+@@ -173,7 +198,7 @@ async fn start_server(
+             // Process name doesn't match ΓÇö could be an external Python/Docker server.
+             // Verify via HTTP health check before giving up.
+             println!("Port {} in use by unknown process, checking if it's a Voicebox server...", SERVER_PORT);
+-            if check_health(SERVER_PORT) {
++            if check_health(SERVER_PORT).await {
+                 println!("Health check passed ΓÇö reusing external server on port {}", SERVER_PORT);
+                 return Ok(format!("http://127.0.0.1:{}", SERVER_PORT));
+             }
+@@ -275,8 +300,13 @@ async fn start_server(
+             {
+                 Ok(output) => {
+                     // Output format: "voicebox-server X.Y.Z\n"
+-                    let version_str = String::from_utf8_lossy(&output.stdout);
++                    // --noconsole PyInstaller binaries may write to stderr instead
++                    // of stdout when sys.stdout is None; check both.
++                    let stdout_str = String::from_utf8_lossy(&output.stdout);
++                    let stderr_str = String::from_utf8_lossy(&output.stderr);
++                    let version_str = if stdout_str.trim().is_empty() { stderr_str } else { stdout_str };
+                     let binary_version = version_str.trim().split_whitespace().last().unwrap_or("");
++                    println!("CUDA --version raw output: {:?}", version_str.trim());
+                     if binary_version == app_version {
+                         println!("CUDA binary version {} matches app version", binary_version);
+                         true
+@@ -305,44 +335,6 @@ async fn start_server(
+         }
+     };
+ 
+-    let sidecar_result = app.shell().sidecar("voicebox-server");
+-
+-    let mut sidecar = match sidecar_result {
+-        Ok(s) => s,
+-        Err(e) => {
+-            eprintln!("Failed to get sidecar: {}", e);
+-
+-            // In dev mode, check if the server is already running (started manually)
+-            #[cfg(debug_assertions)]
+-            {
+-                eprintln!("Dev mode: Checking if server is already running on port {}...", SERVER_PORT);
+-
+-                // Try to connect to the server port
+-                use std::net::TcpStream;
+-                if TcpStream::connect_timeout(
+-                    &format!("127.0.0.1:{}", SERVER_PORT).parse().unwrap(),
+-                    std::time::Duration::from_secs(1),
+-                ).is_ok() {
+-                    println!("Found server already running on port {}", SERVER_PORT);
+-                    return Ok(format!("http://127.0.0.1:{}", SERVER_PORT));
+-                }
+-
+-                eprintln!("");
+-                eprintln!("=================================================================");
+-                eprintln!("DEV MODE: No server found on port {}", SERVER_PORT);
+-                eprintln!("");
+-                eprintln!("Start the Python server in a separate terminal:");
+-                eprintln!("  bun run dev:server");
+-                eprintln!("=================================================================");
+-                eprintln!("");
+-            }
+-
+-            return Err(format!("Failed to start server. In dev mode, run 'bun run dev:server' in a separate terminal."));
+-        }
+-    };
+-
+-    println!("Sidecar command created successfully");
+-
+     // Build common args
+     let data_dir_str = data_dir
+         .to_str()
+@@ -358,7 +350,7 @@ async fn start_server(
+         println!("Custom models directory: {}", dir);
+     }
+ 
+-    // If CUDA binary exists, launch it from the onedir directory.
++    // If CUDA binary exists, launch it directly ΓÇö no sidecar needed.
+     // .current_dir() is critical: PyInstaller onedir expects all DLLs and
+     // support files (nvidia/, _internal/, etc.) relative to the exe.
+     let spawn_result = if let Some(ref cuda_path) = cuda_binary {
+@@ -375,7 +367,44 @@ async fn start_server(
+         }
+         cmd.spawn()
+     } else {
+-        // Use the bundled CPU sidecar
++        // No CUDA binary ΓÇö use the bundled CPU sidecar.
++        let sidecar_result = app.shell().sidecar("voicebox-server");
++
++        let mut sidecar = match sidecar_result {
++            Ok(s) => s,
++            Err(e) => {
++                eprintln!("Failed to get sidecar: {}", e);
++
++                // In dev mode, check if the server is already running (started manually)
++                #[cfg(debug_assertions)]
++                {
++                    eprintln!("Dev mode: Checking if server is already running on port {}...", SERVER_PORT);
++
++                    use std::net::TcpStream;
++                    if TcpStream::connect_timeout(
++                        &format!("127.0.0.1:{}", SERVER_PORT).parse().unwrap(),
++                        std::time::Duration::from_secs(1),
++                    ).is_ok() {
++                        println!("Found server already running on port {}", SERVER_PORT);
++                        return Ok(format!("http://127.0.0.1:{}", SERVER_PORT));
++                    }
++
++                    eprintln!("");
++                    eprintln!("=================================================================");
++                    eprintln!("DEV MODE: No server found on port {}", SERVER_PORT);
++                    eprintln!("");
++                    eprintln!("Start the Python server in a separate terminal:");
++                    eprintln!("  bun run dev:server");
++                    eprintln!("=================================================================");
++                    eprintln!("");
++                }
++
++                return Err(format!("Failed to start server. In dev mode, run 'bun run dev:server' in a separate terminal."));
++            }
++        };
++
++        println!("Sidecar command created successfully");
++
+         sidecar = sidecar.args(["--data-dir", &data_dir_str, "--port", &port_str, "--parent-pid", &parent_pid_str]);
+         if is_remote {
+             sidecar = sidecar.args(["--host", "0.0.0.0"]);
+@@ -615,14 +644,15 @@ async fn stop_server(state: State<'_, ServerState>) -> Result<(), String> {
+             // Send graceful shutdown via HTTP ΓÇö the server's parent-pid watchdog
+             // will also handle cleanup if this app process exits.
+             println!("Sending graceful shutdown via HTTP...");
+-            let client = reqwest::blocking::Client::builder()
++            let client = reqwest::Client::builder()
+                 .timeout(std::time::Duration::from_secs(2))
+                 .build()
+                 .unwrap();
+ 
+             let _ = client
+                 .post(&format!("http://127.0.0.1:{}/shutdown", SERVER_PORT))
+-                .send();
++                .send()
++                .await;
+ 
+             println!("Shutdown request sent (server watchdog will handle cleanup)");
+         }
+@@ -651,9 +681,45 @@ async fn restart_server(
+     // Stop the current server
+     stop_server(state.clone()).await?;
+ 
+-    // Wait for port to be released
++    // Wait for port to be released ΓÇö poll until free rather than a fixed sleep.
++    // On Windows the TCP stack can hold the port for several seconds after the
++    // server process exits, so a fixed 1 s wait is often not enough.
++    // After a 5 s grace period we force-kill whatever process still holds the port.
+     println!("restart_server: waiting for port release...");
+-    tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
++    {
++        let wait_start = tokio::time::Instant::now();
++        let wait_timeout = tokio::time::Duration::from_secs(15);
++        let mut force_killed = false;
++        loop {
++            if wait_start.elapsed() > wait_timeout {
++                println!("restart_server: port-release timeout after 15 s, proceeding anyway");
++                break;
++            }
++            let port_free = {
++                use std::net::TcpStream;
++                TcpStream::connect_timeout(
++                    &format!("127.0.0.1:{}", SERVER_PORT).parse().unwrap(),
++                    std::time::Duration::from_millis(100),
++                ).is_err()
++            };
++            if port_free {
++                println!("restart_server: port released after {}ms", wait_start.elapsed().as_millis());
++                break;
++            }
++            // After 5 s grace period, force-kill whatever is holding the port.
++            #[cfg(windows)]
++            if !force_killed && wait_start.elapsed() > tokio::time::Duration::from_secs(5) {
++                if let Some(pid) = find_any_pid_on_port(SERVER_PORT) {
++                    println!("restart_server: force-killing PID {} still holding port {}", pid, SERVER_PORT);
++                    let _ = std::process::Command::new("taskkill")
++                        .args(["/PID", &pid.to_string(), "/T", "/F"])
++                        .output();
++                    force_killed = true;
++                }
++            }
++            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
++        }
++    }
+ 
+     // Start server again (will auto-detect CUDA binary and use stored models_dir)
+     println!("restart_server: starting server...");
+diff --git a/tauri/src-tauri/tauri.conf.json b/tauri/src-tauri/tauri.conf.json
+index 85b7a4f..2433801 100644
+--- a/tauri/src-tauri/tauri.conf.json
++++ b/tauri/src-tauri/tauri.conf.json
+@@ -59,7 +59,7 @@
+       "open": ".*"
+     },
+     "updater": {
+-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEUxRENBQkRBQjdBNTM1OTIKUldTU05hVzMycXZjNGJGcUxmcVVocll2QjdSaTJNdlFxR2M3VDJsMnVvbDdyZGRPMmRlOW9aWTcK",
++      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVGODBDRjVENkM2NzIzRUQKUldUdEkyZHNYYytBWHc4U2xlQlNycXpQbVZaMXMxdjFwU3RxbFJjeExWNnRGdURRM1ZxcTlMUkMK",
+       "endpoints": ["https://github.com/jamiepine/voicebox/releases/latest/download/latest.json"]
+     }
+   }
+diff --git a/tauri/src-tauri/tauri.local.conf.json b/tauri/src-tauri/tauri.local.conf.json
+new file mode 100644
+index 0000000..55a9946
+--- /dev/null
++++ b/tauri/src-tauri/tauri.local.conf.json
+@@ -0,0 +1,5 @@
++{
++  "bundle": {
++    "createUpdaterArtifacts": false
++  }
++}
