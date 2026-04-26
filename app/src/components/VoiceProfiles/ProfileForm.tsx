@@ -71,6 +71,7 @@ const DEFAULT_ENGINE_OPTIONS = [
   { value: 'tada', label: 'TADA' },
   { value: 'kokoro', label: 'Kokoro 82M' },
   { value: 'silero', label: 'Silero TTS Russian' },
+  { value: 'f5tts_ru', label: 'F5-TTS Russian' },
 ] as const;
 
 function makeProfileSchema(t: (key: string) => string) {

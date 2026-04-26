@@ -113,12 +113,21 @@ export function FloatingGenerateBox({
     };
   }, [isExpanded]);
 
-  // Set first voice as default if none selected
+  // Read selectedProfileId via ref so the auto-select effect only fires when
+  // profiles load — NOT when the user explicitly deselects a profile.
+  const selectedProfileIdRef = useRef(selectedProfileId);
+  selectedProfileIdRef.current = selectedProfileId;
+
+  // Set first voice as default only on initial profiles load (or after all
+  // profiles are deleted and a new one is added). Deliberately excludes
+  // selectedProfileId from deps so clicking a selected card to deselect it
+  // doesn't immediately re-select profiles[0].
   useEffect(() => {
-    if (!selectedProfileId && profiles && profiles.length > 0) {
+    if (!selectedProfileIdRef.current && profiles && profiles.length > 0) {
       setSelectedProfileId(profiles[0].id);
     }
-  }, [selectedProfileId, profiles, setSelectedProfileId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profiles, setSelectedProfileId]);
 
   // Sync engine selection to global store so ProfileList can filter
   const watchedEngine = form.watch('engine');

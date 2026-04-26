@@ -188,15 +188,20 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
       });
       options.onSuccess?.(result.id);
     } catch (error) {
+      // If the generate request itself failed, no download was actually started —
+      // dismiss the loading toast immediately so it doesn't sit there forever.
+      setDownloadingModelName(null);
+      setDownloadingDisplayName(null);
       toast({
         title: 'Generation failed',
         description: error instanceof Error ? error.message : 'Failed to generate audio',
         variant: 'destructive',
+        duration: 8000,
       });
     } finally {
-      // If a download was started, the onComplete/onError callbacks on the toast hook
-      // will clear the state once the SSE reports completion. Only clear immediately
-      // when no download was triggered (model was already available).
+      // If a download was started and no error was thrown, the onComplete/onError
+      // callbacks on the download toast hook will clear the state once the SSE
+      // reports completion or failure.
       if (!downloadStarted) {
         setDownloadingModelName(null);
         setDownloadingDisplayName(null);

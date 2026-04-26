@@ -13,6 +13,13 @@ interface UseModelDownloadToastOptions {
   onError?: (error: string) => void;
 }
 
+/** Stable ref wrapper — always holds the latest callback without causing effect re-runs. */
+function useLatestRef<T>(value: T) {
+  const ref = useRef(value);
+  ref.current = value;
+  return ref;
+}
+
 /**
  * Hook to show and update a toast notification with model download progress.
  * Subscribes to Server-Sent Events for real-time progress updates.
@@ -31,6 +38,11 @@ export function useModelDownloadToast({
   const toastUpdateRef = useRef<any>(null);
   const toastDismissRef = useRef<(() => void) | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  // Stable refs for callbacks — callers often pass inline functions, so we
+  // store them in refs to avoid re-running the EventSource effect on every render.
+  const onCompleteRef = useLatestRef(onComplete);
+  const onErrorRef = useLatestRef(onError);
 
   const formatBytes = useCallback((bytes: number): string => {
     if (bytes === 0) return '0 B';
@@ -165,13 +177,13 @@ export function useModelDownloadToast({
               });
             }
 
-            // Call callbacks
-            if (isComplete && onComplete) {
+            // Call callbacks (via refs so stale closures are never an issue)
+            if (isComplete && onCompleteRef.current) {
               console.log('[useModelDownloadToast] Download complete, calling onComplete callback');
-              onComplete();
-            } else if (isError && onError) {
+              onCompleteRef.current();
+            } else if (isError && onErrorRef.current) {
               console.log('[useModelDownloadToast] Download error, calling onError callback');
-              onError(progress.error || 'Unknown error');
+              onErrorRef.current(progress.error || 'Unknown error');
             }
           }
         }
@@ -199,8 +211,8 @@ export function useModelDownloadToast({
         toastDismissRef.current = null;
       }
 
-      if (onError) {
-        onError('Connection failed');
+      if (onErrorRef.current) {
+        onErrorRef.current('Connection failed');
       }
     };
 
@@ -223,7 +235,7 @@ export function useModelDownloadToast({
         toastUpdateRef.current = null;
       }
     };
-  }, [enabled, serverUrl, modelName, displayName, toast, formatBytes, onComplete, onError]);
+  }, [enabled, serverUrl, modelName, displayName, toast, formatBytes]);
 
   return {
     isTracking: enabled && eventSourceRef.current !== null,
