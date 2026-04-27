@@ -383,6 +383,14 @@ class ApiClient {
     return response.json();
   }
 
+  // Translate text only (no synthesis) — used by the Translate button
+  async translateText(text: string, targetLanguage: string): Promise<{ translated_text: string; success: boolean; error?: string }> {
+    return this.request('/translate-text', {
+      method: 'POST',
+      body: JSON.stringify({ text, target_language: targetLanguage }),
+    });
+  }
+
   // Translate & Synthesize (Seamless M4T + F5-TTS)
   async translateAndSynthesize(
     request: TranslateAndSynthesizeRequest,

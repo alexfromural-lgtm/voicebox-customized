@@ -118,42 +118,61 @@ class TranslateAndSynthesizeService:
     
     async def _translate(self, source_text: str, target_language: str) -> str:
         """
-        Translate text using HuggingFace's Seamless M4T.
-        
+        Translate text using HuggingFace Helsinki-NLP translation models.
+
+        Uses Helsinki-NLP/opus-mt-{src}-{tgt} models via the HF Inference API.
+        These models are free, reliable, and require no authentication token.
+
         Args:
             source_text: Text to translate.
             target_language: Target language code (e.g., "ru", "en").
-        
+
         Returns:
-            Translated text as string.
+            Translated text as string, or original text on failure.
         """
-        from huggingface_hub import InferenceClient
-        
-        # Use Seamless M4T for translation - using v1 API with explicit parameters
-        client = InferenceClient(token=None)  # Uses default token or HF_TOKEN env var
-        
-        try:
-            result = await client.translation(
-                text=source_text,
-                source_lang="auto",
-                target_lang=target_language.lower()
-            )
-            
-            # The translation method returns a dict with 'translation' key
-            if isinstance(result, dict):
-                translated = result.get("translation", "")
-                if not translated:
+        import asyncio
+        import logging
+        logger = logging.getLogger(__name__)
+
+        def _do_translate() -> str:
+            import os
+            import requests
+
+            # Detect source language heuristically (default: en)
+            # For now assume English source since that's the primary use-case.
+            source_lang = "en"
+            target_lang = target_language.lower().split("-")[0]  # "ru-RU" -> "ru"
+
+            # Helsinki-NLP model naming: opus-mt-{src}-{tgt}
+            # Special case: English→Russian is well-supported.
+            model_id = f"Helsinki-NLP/opus-mt-{source_lang}-{target_lang}"
+
+            api_url = f"https://api-inference.huggingface.co/models/{model_id}"
+            hf_token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN")
+            headers = {"Content-Type": "application/json"}
+            if hf_token:
+                headers["Authorization"] = f"Bearer {hf_token}"
+
+            payload = {"inputs": source_text}
+
+            try:
+                response = requests.post(api_url, json=payload, headers=headers, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+
+                # Response format: [{"translation_text": "..."}]
+                if isinstance(data, list) and data:
+                    return data[0].get("translation_text", source_text)
+                elif isinstance(data, dict):
+                    return data.get("translation_text", source_text)
+                else:
                     return source_text
-                return translated
-            else:
-                # Fallback - shouldn't happen
-                return str(result) if result else source_text
-        
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Translation failed: {e}. Returning original text.")
-            return source_text
+
+            except Exception as exc:
+                logger.warning(f"Translation via {model_id} failed: {exc}. Returning original text.")
+                return source_text
+
+        return await asyncio.to_thread(_do_translate)
 
 
 # End of module

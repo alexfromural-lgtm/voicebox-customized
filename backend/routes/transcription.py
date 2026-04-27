@@ -18,6 +18,72 @@ router = APIRouter()
 UPLOAD_CHUNK_SIZE = 1024 * 1024  # 1MB
 
 
+@router.post("/translate-text", response_model=dict)
+async def translate_text_endpoint(request: Request):
+    """
+    Translate plain text to a target language.
+
+    Uses Google Translate's unofficial API (no key required).
+    Returns the translated text so the frontend can put it in the
+    generate form and submit a standard generation (which saves to history).
+
+    Request body:
+        { "text": "Hello world", "target_language": "ru" }
+
+    Response:
+        { "translated_text": "Привет мир", "success": true }
+    """
+    import json
+    import asyncio
+    import logging
+
+    logger_t = logging.getLogger(__name__)
+
+    body = await request.body()
+    try:
+        data = json.loads(body)
+        source_text = data.get("text", "").strip()
+        target_lang = data.get("target_language", "ru").lower().split("-")[0]
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    if not source_text:
+        raise HTTPException(status_code=400, detail="text is required")
+
+    def _do_google_translate(text: str, tgt: str) -> str:
+        """Call Google Translate unofficial API via urllib (stdlib, no token)."""
+        import urllib.request
+        import urllib.parse
+
+        url = (
+            "https://translate.googleapis.com/translate_a/single"
+            f"?client=gtx&sl=auto&tl={urllib.parse.quote(tgt)}"
+            "&dt=t&q=" + urllib.parse.quote(text)
+        )
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "Mozilla/5.0"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            raw = json.loads(resp.read().decode("utf-8"))
+
+        # Response structure: [[["translated", "original", ...], ...], ...]
+        if isinstance(raw, list) and raw and isinstance(raw[0], list):
+            translated = "".join(
+                part[0] for part in raw[0] if isinstance(part, list) and part[0]
+            )
+            return translated or text
+        return text
+
+    try:
+        translated = await asyncio.to_thread(_do_google_translate, source_text, target_lang)
+        logger_t.info("Translated %d chars to %s", len(source_text), target_lang)
+        return {"translated_text": translated, "success": True}
+    except Exception as exc:
+        logger_t.warning("Translation failed: %s — returning original text", exc)
+        return {"translated_text": source_text, "success": False, "error": str(exc)}
+
+
 @router.post("/transcribe", response_model=models.TranscriptionResponse)
 async def transcribe_audio(
     file: UploadFile = File(...),
@@ -249,14 +315,16 @@ async def translate_audio_text(request: Request):
 async def translate_and_synthesize_frontend(request: Request):
     """
     Translate text and synthesize audio (frontend-friendly endpoint).
-    
-    Accepts JSON with `text` and `language`.
-    Returns `{ status, translatedText, audioUrl, error }`.
 
-    Example request body:
+    Accepts JSON with `text`, `language`, and `profile_id`.
+    Resolves the profile's reference audio for voice cloning, then
+    translates and synthesizes the text.
+
+    Request body:
         {
             "text": "Hello world",
-            "language": "ru"
+            "language": "ru",
+            "profile_id": "<uuid>"
         }
 
     Response:
@@ -264,40 +332,59 @@ async def translate_and_synthesize_frontend(request: Request):
           "status": "success|error",
           "translated_text": "Привет мир",
           "audio_url": "/api/audio/xxx",
-          "error": null
+          "engine_used": "F5TTSRuBackend"
         }
     """
     try:
         from ..backends.f5tts_ru_backend import F5TTSRuBackend
+        from ..services import profiles as profiles_svc
+        from ..database import get_db
 
         service = TranslateAndSynthesizeService(F5TTSRuBackend)
 
-        async def get_body():
-            return await request.body()
+        body = await request.body()
 
-        body = await get_body()
-        
         import json
         try:
             data = json.loads(body)
             source_text = data.get("text", "") or data.get("source_text", "")
             target_language = data.get("language", "ru") or data.get("target_language", "ru")
-            voice_prompt = data.get("voice_prompt")
+            profile_id = data.get("profile_id")
+            voice_prompt = data.get("voice_prompt")  # allow explicit override
         except Exception as e:
             print(f"Error parsing request body: {e}")
             raise HTTPException(status_code=400, detail="Invalid JSON in request body")
 
-        # Await the async translate_and_synthesize method
+        # If profile_id provided, resolve the voice_prompt from the profile's samples
+        if profile_id and not voice_prompt:
+            try:
+                db = next(get_db())
+                try:
+                    voice_prompt = await profiles_svc.create_voice_prompt_for_profile(
+                        profile_id,
+                        db,
+                        use_cache=True,
+                        engine="f5tts_ru",
+                    )
+                finally:
+                    db.close()
+            except Exception as e:
+                print(f"Could not resolve voice_prompt for profile {profile_id}: {e}")
+                # Non-fatal — proceed without voice cloning
+                voice_prompt = {}
+
+        if not voice_prompt:
+            voice_prompt = {}
+
+        # Translate and synthesize
         result = await service.translate_and_synthesize(
             source_text=source_text,
             target_language=target_language,
             voice_prompt=voice_prompt
         )
-        
+
         translated_text, audio_path, duration, engine_used = result
-        
-        # Build the URL for the frontend to download the audio
-        from ..app import app as main_app
+
         audio_url = f"/api/audio/{audio_path}"
 
         return {

@@ -378,6 +378,7 @@ export type TranslationLanguage = 'en' | 'zh' | 'ja' | 'ko' | 'de' | 'fr' | 'ru'
 export interface TranslateAndSynthesizeRequest {
   source_text: string;
   target_language?: TranslationLanguage;
+  profile_id?: string;
 }
 
 export interface TranslateAndSynthesizeResponse {

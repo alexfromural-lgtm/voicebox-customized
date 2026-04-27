@@ -262,7 +262,9 @@ export function FloatingGenerateBox({
     await handleSubmit(data, selectedProfileId);
   }
 
-  // Handle translate and synthesize
+  // Translate button: translate text, fill the form, submit generate (saves to history)
+  const [isTranslating, setIsTranslating] = useState(false);
+
   const handleTranslateAndSynthesize = async () => {
     if (!selectedProfileId) return;
 
@@ -276,54 +278,50 @@ export function FloatingGenerateBox({
       return;
     }
 
-    // Modify the translateAndSynthesize section (around lines 252-268) to add validation:
     const availableTranslationLanguages = ['en', 'zh', 'ja', 'ko', 'de', 'fr', 'ru', 'pt', 'es', 'it'] as const;
-    const currentLang = form.watch('language');
+    const currentLang = form.getValues('language');
     const translationLang = availableTranslationLanguages.find((lang: TranslationLanguage) => lang === currentLang);
 
     if (!translationLang) {
       toast({
         title: t('global.error'),
-        description: t(`Selected language "${currentLang}" is not supported for translation. Please change it.`),
+        description: `Selected language "${currentLang}" is not supported for translation. Please change it.`,
         variant: 'destructive',
       });
       return;
     }
 
-
+    setIsTranslating(true);
     try {
-      const translationResponse = await apiClient.translateAndSynthesize({
-        source_text: textValue,
-        target_language: translationLang,
-      });
+      // Step 1: translate text only
+      const result = await apiClient.translateText(textValue, translationLang);
 
-      // Use the translated text for generation
-      if (translationResponse.translated_text) {
-        form.setValue('text', translationResponse.translated_text);
-
-        // Trigger auto-expand and submit after a short delay to let UI update
-        setTimeout(() => {
-          setIsExpanded(true);
-
-          const submitButton = document.querySelector(
-            'button[aria-label*="generate"]'
-          ) as HTMLElement | null;
-          if (submitButton) {
-            submitButton.click();
-          }
-        }, 500);
-      } else {
+      if (!result.translated_text) {
         toast({
           title: t('global.error'),
           description: t(`generation.errors.emptyTranslation`),
           variant: 'destructive',
         });
+        return;
       }
+
+      // Step 2: set translated text in the form
+      form.setValue('text', result.translated_text, { shouldValidate: true });
+
+      // Step 3: submit the standard generate form so the result appears in history
+      await form.handleSubmit(onSubmit)();
     } catch (error) {
-      console.error('Translation and synthesis failed:', error);
-      alert(t('generation.errors.translationFailed'));
+      console.error('Translation failed:', error);
+      toast({
+        title: t('global.error'),
+        description: t('generation.errors.translationFailed'),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsTranslating(false);
     }
   };
+
 
   return (
     <motion.div
@@ -456,23 +454,28 @@ export function FloatingGenerateBox({
                   </span>
                 </div>
 
-                {/* Translate and Synthesize button - positioned to the right of Generate */}
+                {/* Translate button — translates text then auto-submits generate */}
                 {!isPending && (
                   <Button
                     type="button"
                     onClick={handleTranslateAndSynthesize}
-                    disabled={!selectedProfileId || form.getValues('text').trim() === ''}
+                    disabled={isTranslating || !selectedProfileId || form.getValues('text').trim() === ''}
                     variant="secondary"
                     className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/90 text-secondary-foreground transition-all duration-200 relative group"
                     size="icon"
-                    aria-label={t('generation.button.translate')}
+                    aria-label={isTranslating ? t('generation.button.translating') : t('generation.button.translate')}
                   >
-                    <Globe className="h-4 w-4" />
+                    {isTranslating ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Globe className="h-4 w-4" />
+                    )}
                     <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-md bg-popover px-3 py-1.5 text-xs text-popover-foreground border border-border opacity-0 transition-opacity group-hover:opacity-100 z-[9999]">
-                      {t('generation.button.translate')}
+                      {isTranslating ? t('generation.button.translating') : t('generation.button.translate')}
                     </span>
                   </Button>
                 )}
+
 
                 {/* Instruct toggle — only for Qwen CustomVoice, which actually honors the kwarg */}
                 <AnimatePresence>
