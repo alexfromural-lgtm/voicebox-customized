@@ -273,13 +273,29 @@ class F5TTSRuBackend:
             import torch
             import soundfile as sf
             from f5_tts.infer.utils_infer import infer_batch_process, chunk_text
+            
+            # Patch torchaudio.load to return empty tensor when ref_audio is None
+            # This bypasses the torchcodec dependency issue
+            original_load = None
+            def patched_load(filepath, mode=None, channels=None, frame_offset=0, duration=None):
+                """Mock load that returns a 0.5s silence tensor for None paths."""
+                if filepath is None:
+                    import numpy as np
+                    sr_mock = self.device == "cuda" and 24000 or F5_SAMPLE_RATE
+                    return torch.zeros(1, int(0.5 * sr_mock), dtype=torch.float32), sr_mock
+                return original_load(filepath, mode=mode, channels=channels, frame_offset=frame_offset, duration=duration)
 
             if seed is not None:
                 manual_seed(seed, self.device)
+            
+            # Patch only for this generation call
+            try:
+                import torchaudio
+                original_load = torchaudio.load
+                torchaudio.load = patched_load
+            except Exception as e:
+                logger.warning(f"Could not patch torchaudio.load: {e}")
 
-            # Load reference audio with soundfile (avoids torchaudio.load /
-            # torchcodec dependency; torchaudio.transforms.Resample used
-            # inside infer_batch_process is purely torch math, no I/O)
             if ref_audio:
                 audio_data, sr = sf.read(ref_audio, dtype="float32")
                 if audio_data.ndim > 1:
@@ -321,20 +337,54 @@ class F5TTSRuBackend:
                     sr,
                 )
             else:
-                # Fallback: 1 second of silence (no reference available)
+                # No reference audio - generate without voice cloning using standard f5_tts
                 logger.warning("No reference audio — generating without voice cloning")
-                silence = torch.zeros(1, F5_SAMPLE_RATE)
-                ref_audio_tuple = (silence, F5_SAMPLE_RATE)
-                effective_ref_text = ""
 
-            # Normalise ref_text ending (required by F5-TTS internals)
+                # Create a minimal valid reference audio tensor (0.5s silence at F5 sample rate)
+                ref_audio_tensor = torch.zeros(1, int(0.5 * F5_SAMPLE_RATE), dtype=torch.float32)
+                ref_audio_tuple = (ref_audio_tensor, F5_SAMPLE_RATE)
+
+                # Normalize text ending for voice cloning mode
+                norm_text = text.strip()
+                if norm_text and not norm_text.endswith((".", "。", " ")):
+                    norm_text += ". "
+
+                # Use infer_batch_process with minimal ref audio - this will use the empty tensor
+                # provided above instead of trying to load a file
+                gen_text_batches = chunk_text(norm_text)
+                
+                result = next(
+                    infer_batch_process(
+                        ref_audio_tuple,
+                        norm_text,
+                        gen_text_batches,
+                        self._model,
+                        self._vocoder,
+                        mel_spec_type="vocos",
+                        device=self.device,
+                    )
+                )
+
+                if result[0] is None:
+                    return np.zeros(F5_SAMPLE_RATE, dtype=np.float32), F5_SAMPLE_RATE
+
+                final_wave = np.asarray(result[0], dtype=np.float32)
+
+                # Apply same audio processing (cut leading artifact, fade-in)
+                cut_samples = int(0.10 * F5_SAMPLE_RATE)  # 100 ms
+                if len(final_wave) > cut_samples:
+                    final_wave = final_wave[cut_samples:]
+                
+                fade_samples = int(0.02 * F5_SAMPLE_RATE)  # 20 ms
+                if len(final_wave) > fade_samples:
+                    final_wave[:fade_samples] *= np.linspace(0.0, 1.0, fade_samples, dtype=np.float32)
+
+                return final_wave, F5_SAMPLE_RATE
+            
+            # Normalise ref_text ending (required by F5-TTS internals) - only for voice cloning mode
             norm_ref_text = effective_ref_text.strip()
             if norm_ref_text and not norm_ref_text.endswith((".", "。", " ")):
                 norm_ref_text += ". "
-
-            gen_text_batches = chunk_text(text)
-            if not gen_text_batches:
-                return np.zeros(F5_SAMPLE_RATE, dtype=np.float32), F5_SAMPLE_RATE
 
             result = next(
                 infer_batch_process(

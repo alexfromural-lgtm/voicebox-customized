@@ -129,22 +129,27 @@ class TranslateAndSynthesizeService:
         """
         from huggingface_hub import InferenceClient
         
-        # Use Seamless M4T for translation
+        # Use Seamless M4T for translation - using v1 API with explicit parameters
         client = InferenceClient(token=None)  # Uses default token or HF_TOKEN env var
         
         try:
-            result = client.pipeline(
-                "seamless-m4t-large",
+            result = await client.translation(
                 text=source_text,
-                task="translate",
                 source_lang="auto",
-                target_lang=target_language
+                target_lang=target_language.lower()
             )
             
-            return str(result) if result else ""
+            # The translation method returns a dict with 'translation' key
+            if isinstance(result, dict):
+                translated = result.get("translation", "")
+                if not translated:
+                    return source_text
+                return translated
+            else:
+                # Fallback - shouldn't happen
+                return str(result) if result else source_text
         
         except Exception as e:
-            # If translation fails, return original text
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Translation failed: {e}. Returning original text.")

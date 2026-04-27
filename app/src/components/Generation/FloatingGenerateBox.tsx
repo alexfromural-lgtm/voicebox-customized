@@ -39,7 +39,7 @@ export function FloatingGenerateBox({
   showVoiceSelector = false,
 }: FloatingGenerateBoxProps) {
   const { t } = useTranslation();
-  const toast = useToast();
+  const { toast } = useToast();
   const selectedProfileId = useUIStore((state) => state.selectedProfileId);
   const setSelectedProfileId = useUIStore((state) => state.setSelectedProfileId);
   const setSelectedEngine = useUIStore((state) => state.setSelectedEngine);
@@ -268,7 +268,7 @@ export function FloatingGenerateBox({
 
     const textValue = form.getValues('text');
     if (!textValue || !String(textValue).trim()) {
-      toast.toast({
+      toast({
         title: t('global.error'),
         description: t(`generation.errors.emptyTranslation`),
         variant: 'destructive',
@@ -282,7 +282,7 @@ export function FloatingGenerateBox({
     const translationLang = availableTranslationLanguages.find((lang: TranslationLanguage) => lang === currentLang);
 
     if (!translationLang) {
-      toast.toast({
+      toast({
         title: t('global.error'),
         description: t(`Selected language "${currentLang}" is not supported for translation. Please change it.`),
         variant: 'destructive',
@@ -313,7 +313,7 @@ export function FloatingGenerateBox({
           }
         }, 500);
       } else {
-        toast.toast({
+        toast({
           title: t('global.error'),
           description: t(`generation.errors.emptyTranslation`),
           variant: 'destructive',
