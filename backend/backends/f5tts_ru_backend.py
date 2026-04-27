@@ -296,6 +296,9 @@ class F5TTSRuBackend:
             except Exception as e:
                 logger.warning(f"Could not patch torchaudio.load: {e}")
 
+            # Always compute gen_text_batches so it is available in both branches
+            gen_text_batches = chunk_text(text)
+
             if ref_audio:
                 audio_data, sr = sf.read(ref_audio, dtype="float32")
                 if audio_data.ndim > 1:
@@ -351,7 +354,7 @@ class F5TTSRuBackend:
 
                 # Use infer_batch_process with minimal ref audio - this will use the empty tensor
                 # provided above instead of trying to load a file
-                gen_text_batches = chunk_text(norm_text)
+                gen_text_batches = chunk_text(norm_text)  # override with normalised text
                 
                 result = next(
                     infer_batch_process(
