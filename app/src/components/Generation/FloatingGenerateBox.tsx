@@ -1,10 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMatchRoute } from '@tanstack/react-router';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Loader2, SlidersHorizontal, Sparkles } from 'lucide-react';
+import { Globe, Loader2, SlidersHorizontal, Sparkles } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
+import { useToast } from '@/components/ui/use-toast';
 import { Form, FormControl, FormField, FormItem, FormMessage } from '@/components/ui/form';
 import {
   Select,
@@ -26,6 +27,7 @@ import { useStoryStore } from '@/stores/storyStore';
 import { useUIStore } from '@/stores/uiStore';
 import { EngineModelSelector } from './EngineModelSelector';
 import { ParalinguisticInput } from './ParalinguisticInput';
+import type { TranslationLanguage } from '@/lib/api/types';
 
 interface FloatingGenerateBoxProps {
   isPlayerOpen?: boolean;
@@ -37,6 +39,7 @@ export function FloatingGenerateBox({
   showVoiceSelector = false,
 }: FloatingGenerateBoxProps) {
   const { t } = useTranslation();
+  const toast = useToast();
   const selectedProfileId = useUIStore((state) => state.selectedProfileId);
   const setSelectedProfileId = useUIStore((state) => state.setSelectedProfileId);
   const setSelectedEngine = useUIStore((state) => state.setSelectedEngine);
@@ -259,6 +262,69 @@ export function FloatingGenerateBox({
     await handleSubmit(data, selectedProfileId);
   }
 
+  // Handle translate and synthesize
+  const handleTranslateAndSynthesize = async () => {
+    if (!selectedProfileId) return;
+
+    const textValue = form.getValues('text');
+    if (!textValue || !String(textValue).trim()) {
+      toast.toast({
+        title: t('global.error'),
+        description: t(`generation.errors.emptyTranslation`),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Modify the translateAndSynthesize section (around lines 252-268) to add validation:
+    const availableTranslationLanguages = ['en', 'zh', 'ja', 'ko', 'de', 'fr', 'ru', 'pt', 'es', 'it'] as const;
+    const currentLang = form.watch('language');
+    const translationLang = availableTranslationLanguages.find((lang: TranslationLanguage) => lang === currentLang);
+
+    if (!translationLang) {
+      toast.toast({
+        title: t('global.error'),
+        description: t(`Selected language "${currentLang}" is not supported for translation. Please change it.`),
+        variant: 'destructive',
+      });
+      return;
+    }
+
+
+    try {
+      const translationResponse = await apiClient.translateAndSynthesize({
+        source_text: textValue,
+        target_language: translationLang,
+      });
+
+      // Use the translated text for generation
+      if (translationResponse.translated_text) {
+        form.setValue('text', translationResponse.translated_text);
+
+        // Trigger auto-expand and submit after a short delay to let UI update
+        setTimeout(() => {
+          setIsExpanded(true);
+
+          const submitButton = document.querySelector(
+            'button[aria-label*="generate"]'
+          ) as HTMLElement | null;
+          if (submitButton) {
+            submitButton.click();
+          }
+        }, 500);
+      } else {
+        toast.toast({
+          title: t('global.error'),
+          description: t(`generation.errors.emptyTranslation`),
+          variant: 'destructive',
+        });
+      }
+    } catch (error) {
+      console.error('Translation and synthesis failed:', error);
+      alert(t('generation.errors.translationFailed'));
+    }
+  };
+
   return (
     <motion.div
       ref={containerRef}
@@ -266,7 +332,7 @@ export function FloatingGenerateBox({
         'fixed right-auto',
         isStoriesRoute
           ? // Position aligned with story list: after sidebar + padding, width 360px
-            'left-[calc(5rem+2rem)] w-[360px]'
+          'left-[calc(5rem+2rem)] w-[360px]'
           : 'left-[calc(5rem+2rem)] right-8 lg:right-auto lg:w-[calc((100%-5rem-4rem)/2-1rem)]',
       )}
       style={{
@@ -307,8 +373,8 @@ export function FloatingGenerateBox({
                               placeholder={
                                 isStoriesRoute && currentStory
                                   ? t('generation.placeholder.storyWithEffects', {
-                                      name: currentStory.name,
-                                    })
+                                    name: currentStory.name,
+                                  })
                                   : selectedProfile
                                     ? t('generation.placeholder.effectsHint')
                                     : t('generation.placeholder.selectVoice')
@@ -337,8 +403,8 @@ export function FloatingGenerateBox({
                                   ? t('generation.placeholder.story', { name: currentStory.name })
                                   : selectedProfile
                                     ? t('generation.placeholder.profile', {
-                                        name: selectedProfile.name,
-                                      })
+                                      name: selectedProfile.name,
+                                    })
                                     : t('generation.placeholder.selectVoice')
                               }
                               className="resize-none bg-transparent border-none focus-visible:ring-0 focus-visible:ring-offset-0 focus:outline-none focus:ring-0 outline-none ring-0 rounded-2xl text-sm placeholder:text-muted-foreground/60 w-full"
@@ -359,7 +425,8 @@ export function FloatingGenerateBox({
                 />
               </motion.div>
 
-              <div className="relative shrink-0">
+              <div className="flex items-center gap-1 shrink-0">
+                {/* Generate button - positioned to the left of Translate */}
                 <div className="group relative">
                   <Button
                     type="submit"
@@ -388,6 +455,24 @@ export function FloatingGenerateBox({
                         : t('generation.button.generate')}
                   </span>
                 </div>
+
+                {/* Translate and Synthesize button - positioned to the right of Generate */}
+                {!isPending && (
+                  <Button
+                    type="button"
+                    onClick={handleTranslateAndSynthesize}
+                    disabled={!selectedProfileId || form.getValues('text').trim() === ''}
+                    variant="secondary"
+                    className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/90 text-secondary-foreground transition-all duration-200 relative group"
+                    size="icon"
+                    aria-label={t('generation.button.translate')}
+                  >
+                    <Globe className="h-4 w-4" />
+                    <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-md bg-popover px-3 py-1.5 text-xs text-popover-foreground border border-border opacity-0 transition-opacity group-hover:opacity-100 z-[9999]">
+                      {t('generation.button.translate')}
+                    </span>
+                  </Button>
+                )}
 
                 {/* Instruct toggle — only for Qwen CustomVoice, which actually honors the kwarg */}
                 <AnimatePresence>

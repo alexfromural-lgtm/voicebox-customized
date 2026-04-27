@@ -31,6 +31,8 @@ import type {
   StoryItemVersionUpdate,
   StoryResponse,
   TranscriptionResponse,
+  TranslateAndSynthesizeRequest,
+  TranslateAndSynthesizeResponse,
   VoiceProfileCreate,
   VoiceProfileResponse,
   WhisperModelSize,
@@ -379,6 +381,20 @@ class ApiClient {
     }
 
     return response.json();
+  }
+
+  // Translate & Synthesize (Seamless M4T + F5-TTS)
+  async translateAndSynthesize(
+    request: TranslateAndSynthesizeRequest,
+  ): Promise<TranslateAndSynthesizeResponse> {
+    console.log('[API] translateAndSynthesize called:', request);
+    return this.request<TranslateAndSynthesizeResponse>(
+      '/translate-and-synthesize',
+      {
+        method: 'POST',
+        body: JSON.stringify(request),
+      },
+    );
   }
 
   // Model Management

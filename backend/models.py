@@ -519,3 +519,48 @@ class AvailableEffectsResponse(BaseModel):
     """Response listing all available effect types."""
 
     effects: List[AvailableEffect]
+
+
+class TranslateAndSynthesizeRequest(BaseModel):
+    """
+    Request model for seamless translation + synthesis.
+    
+    Converts source text to target language, then synthesizes in the voice
+    of a reference speaker (if provided). The f5tts_ru backend automatically
+    converts Russian Cyrillic to phonetic representation with stress markers,
+    providing accurate pronunciation by teaching the model acoustic properties
+    of stressed vs unstressed vowels.
+
+    For English source text with Russian target: G2P conversion is skipped as
+    English has no stress-marked phonemes in this implementation. The F5-TTS
+    model handles both languages natively without additional conversion.
+    """
+
+    source_text: str = Field(..., min_length=1, max_length=50000)
+    target_language: str = Field(
+        default="ru", pattern="^(en|zh|ja|ko|de|fr|ru|pt|es|it)$"
+    )
+    voice_prompt: Optional[dict] = Field(
+        None, description="Voice cloning prompt with ref_audio (file path) and ref_text"
+    )
+
+
+class TranslateAndSynthesizeResponse(BaseModel):
+    """
+    Response model for seamless translation + synthesis.
+
+    Returns the target language text along with the synthesized audio path.
+    When using f5tts_ru backend, Russian text is automatically converted to
+    phonetic representation with stress markers before synthesis.
+    """
+
+    source_text: str
+    target_language: str
+    translated_text: str  # Target language text (already processed for f5tts_ru)
+    audio_path: Optional[str] = None
+    duration: Optional[float] = None
+    error: Optional[str] = None
+    engine_used: Optional[str] = None
+
+
+# End of models.py

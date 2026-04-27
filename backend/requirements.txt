@@ -62,6 +62,9 @@ pedalboard>=0.9.0
 # HTTP client (for CUDA backend download and Silero model download)
 httpx>=0.27.0
 
+# Seamless Communication (Meta) for speech-to-text translation
+seamless-communication>=1.0.0.post2503161
+
 # F5-TTS Russian (voice cloning fine-tune on Russian speech)
 # Install --no-deps (f5-tts pins gradio/wandb/datasets not needed for inference)
 # Run: pip install --no-deps f5-tts

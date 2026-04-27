@@ -341,7 +341,7 @@ export interface EffectPresetCreate {
 export interface EffectPresetUpdate {
   name?: string;
   description?: string;
-  effects_chain?: EffectConfig[];
+  effects_chain: EffectConfig[];
 }
 
 export interface AvailableEffectParam {
@@ -368,4 +368,24 @@ export interface ApplyEffectsRequest {
   source_version_id?: string;
   label?: string;
   set_as_default?: boolean;
+}
+
+// Translate and Synthesize (Seamless M4T + F5-TTS)
+
+/** Supported target languages for translation */
+export type TranslationLanguage = 'en' | 'zh' | 'ja' | 'ko' | 'de' | 'fr' | 'ru' | 'pt' | 'es' | 'it';
+
+export interface TranslateAndSynthesizeRequest {
+  source_text: string;
+  target_language?: TranslationLanguage;
+}
+
+export interface TranslateAndSynthesizeResponse {
+  source_text: string;
+  target_language: TranslationLanguage;
+  translated_text: string;
+  audio_url?: string;
+  duration?: number;
+  error?: string;
+  engine_used?: string;
 }

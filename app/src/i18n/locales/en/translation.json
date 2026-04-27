@@ -534,10 +534,15 @@
       "selectVoice": "Select a voice profile above…"
     },
     "button": {
+      "translate": "Translate",
       "generate": "Generate speech",
       "generating": "Generating…",
       "selectFirst": "Select a voice profile first"
     },
+    "errors": {
+      "emptyTranslation": "Please provide a translation before generating speech",
+      "translationFailed": "Failed translation message"
+    },    
     "instruct": {
       "show": "Show delivery instructions",
       "hide": "Hide delivery instructions",

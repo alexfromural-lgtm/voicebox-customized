@@ -366,3 +366,35 @@ class F5TTSRuBackend:
             return final_wave, F5_SAMPLE_RATE
 
         return await asyncio.to_thread(_generate_sync)
+
+    async def translate_and_synthesize(self, source_text: str, target_language: str, voice_prompt: dict) -> Tuple[np.ndarray, int]:
+        """
+        Translate text to target language and synthesize speech with voice cloning.
+
+        For F5-TTS Russian backend, this is a simple passthrough since the model
+        handles both Russian and English natively. The source_text will be used as-is
+        if it's already in Russian or English; otherwise, external translation services
+        should be used to convert the text first.
+
+        Args:
+            source_text: Text to translate (if needed) and synthesize.
+            target_language: Target language code (e.g., "ru", "en"). Currently ignored - uses source_text as-is.
+            voice_prompt: Dict with ref_audio (file path) and ref_text.
+
+        Returns:
+            (audio_array, sample_rate)
+        """
+        # For now, passthrough the source text directly since F5-TTS handles ru/en natively
+        logger.info(f"Translating/synthesizing to {target_language}...")
+
+        result = await self.generate(source_text, voice_prompt, language=target_language)
+        
+        if len(result[0]) > 0:
+            logger.debug("Translation/synthesis completed successfully")
+        else:
+            logger.warning("Translation/synthesis produced no audio output")
+            
+        return result
+
+
+# End of F5TTSRuBackend class

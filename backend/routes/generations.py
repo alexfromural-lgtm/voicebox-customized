@@ -3,6 +3,11 @@
 import asyncio
 import logging
 import uuid
+import json as _json
+import tempfile
+import os
+import threading
+import time
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -16,12 +21,130 @@ from ..database import Generation as DBGeneration, VoiceProfile as DBVoiceProfil
 from ..services.generation import run_generation
 from ..services.task_queue import cancel_generation as cancel_generation_job, enqueue_generation
 from ..utils.tasks import get_task_manager
+from ..backends import get_tts_backend_for_engine, ensure_model_cached_or_raise
 
 router = APIRouter()
 
 
 def _resolve_generation_engine(data: models.GenerationRequest, profile) -> str:
     return data.engine or getattr(profile, "default_engine", None) or getattr(profile, "preset_engine", None) or "qwen"
+
+
+@router.post("/translate_and_synthesize", response_model=models.TranslateAndSynthesizeResponse)
+async def translate_and_synthesize(
+    data: models.TranslateAndSynthesizeRequest,
+    db: Session = Depends(get_db),
+):
+    """Translate source text to target language and synthesize speech."""
+    # Determine which engine to use based on target language
+    target_language_lower = data.target_language.lower()
+
+    # Use f5tts_ru for Russian, others default to qwen
+    if target_language_lower == "ru":
+        engine = "f5tts_ru"
+    else:
+        engine = "qwen"
+
+    try:
+        profiles.validate_profile_engine(None, engine)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Engine not supported: {str(e)}")
+
+    # Ensure model is loaded
+    await ensure_model_cached_or_raise(engine, "1.7B")
+    from ..backends import load_engine_model
+    await load_engine_model(engine, "1.7B")
+
+    tts_backend = get_tts_backend_for_engine(engine)
+
+    # Translate source text to target language
+    translated_text = ""
+    try:
+        # Check if translation is needed (simple heuristic for same-language check)
+        import re
+        words = data.source_text.split()
+        last_word_lower = words[-1].lower() if words else ""
+        if data.target_language != last_word_lower and len(words) > 0:
+            from ..services.translator import translate_text
+
+            translation_result = await translate_text(data.source_text, data.target_language)
+            translated_text = translation_result.get("translation", "")
+        else:
+            # Same language or very short text, use original text
+            translated_text = data.source_text
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Translation failed: {str(e)}")
+
+    # Apply f5tts_ru phonetic conversion if using that engine (with Russian target)
+    phonetic_text = translated_text
+    if engine == "f5tts_ru" and data.target_language.lower() == "ru":
+        from ..utils.g2p_ru import convert_russian_to_phonetic
+
+        try:
+            phonetic_text = convert_russian_to_phonetic(translated_text)
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"G2P conversion failed: {str(e)}"
+            )
+
+    # Prepare voice prompt if provided
+    voice_prompt = None
+    if data.voice_prompt and "ref_audio" in data.voice_prompt:
+        ref_audio_path = data.voice_prompt["ref_audio"]
+        ref_text = data.voice_prompt.get("ref_text", "")
+
+        try:
+            temp_voice_prompt = {
+                "ref_audio": ref_audio_path,
+                "ref_text": ref_text,
+            }
+            voice_prompt = await profiles.create_voice_prompt_for_cloning(
+                db=db,
+                engine=engine,
+                **temp_voice_prompt
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Voice prompt creation failed: {str(e)}")
+
+    # Generate speech using F5-TTS
+    import numpy as np
+
+    try:
+        audio, sample_rate = tts_backend.generate(
+            phonetic_text if engine == "f5tts_ru" else translated_text,
+            voice_prompt=voice_prompt,
+            language=data.target_language,
+            instruct=None,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Synthesis failed: {str(e)}")
+
+    # Convert to WAV bytes and save to temp file
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_file:
+        wav_bytes = tts_backend.audio_to_wav_bytes(audio, sample_rate)
+        tmp_file.write(wav_bytes)
+        tmp_path = tmp_file.name
+
+    # Clean up temp file after 60 seconds
+    def cleanup_temp():
+        try:
+            os.unlink(tmp_path)
+        except Exception as e:
+            logger.error(f"Failed to clean up temp file {tmp_path}: {e}")
+
+    timer = threading.Timer(60.0, cleanup_temp)
+    timer.start()
+
+    duration_seconds = len(wav_bytes) / (sample_rate * 2)  # WAV is 16-bit PCM
+
+    return models.TranslateAndSynthesizeResponse(
+        source_text=data.source_text,
+        target_language=data.target_language,
+        translated_text=phonetic_text if engine == "f5tts_ru" and data.target_language.lower() == "ru" else translated_text,
+        audio_path=tmp_path,
+        duration=duration_seconds,
+        engine_used=engine,
+    )
 
 
 @router.post("/generate", response_model=models.GenerationResponse)
@@ -72,8 +195,6 @@ async def generate_speech(
     if data.effects_chain is not None:
         effects_chain_config = [e.model_dump() for e in data.effects_chain]
     else:
-        import json as _json
-
         profile_obj = db.query(DBVoiceProfile).filter_by(id=data.profile_id).first()
         if profile_obj and profile_obj.effects_chain:
             try:
@@ -311,8 +432,6 @@ async def stream_speech(
     if data.effects_chain is not None:
         effects_chain_config = [e.model_dump() for e in data.effects_chain]
     elif profile.effects_chain:
-        import json as _json
-
         try:
             effects_chain_config = _json.loads(profile.effects_chain)
         except Exception:
