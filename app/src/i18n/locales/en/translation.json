@@ -542,7 +542,8 @@
     },
     "errors": {
       "emptyTranslation": "Please provide a translation before generating speech",
-      "translationFailed": "Failed translation message"
+      "translationFailed": "Failed translation message",
+      "textTooLong": "Text is too long ({{count}} / {{max}} characters). Please shorten it before translating."
     },    
     "instruct": {
       "show": "Show delivery instructions",

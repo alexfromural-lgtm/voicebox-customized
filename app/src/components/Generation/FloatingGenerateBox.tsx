@@ -278,6 +278,16 @@ export function FloatingGenerateBox({
       return;
     }
 
+    const TRANSLATE_MAX_CHARS = 1800;
+    if (textValue.length > TRANSLATE_MAX_CHARS) {
+      toast({
+        title: t('global.error'),
+        description: t('generation.errors.textTooLong', { count: textValue.length, max: TRANSLATE_MAX_CHARS }),
+        variant: 'destructive',
+      });
+      return;
+    }
+
     const availableTranslationLanguages = ['en', 'zh', 'ja', 'ko', 'de', 'fr', 'ru', 'pt', 'es', 'it'] as const;
     const currentLang = form.getValues('language');
     const translationLang = availableTranslationLanguages.find((lang: TranslationLanguage) => lang === currentLang);
