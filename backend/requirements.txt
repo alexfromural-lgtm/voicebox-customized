@@ -78,8 +78,12 @@ pypinyin
 rjieba
 matplotlib  # f5_tts.infer.utils_infer imports matplotlib at module level
 
-# G2P (Grapheme-to-Phoneme) for Russian phonetic conversion via espeak-ng
-# Note: espeak-ng is a system binary, NOT a Python package. Install separately:
+# G2P / stress marking for Russian TTS
+# ruaccent: primary stress tagger — outputs Cyrillic with + markers (е.g. молок+о)
+# Recommended by the F5-TTS_RUSSIAN model author; uses a small neural model.
+ruaccent
+# espeak-ng: fallback stress locator (system binary, NOT a Python package).
+# Install separately if ruaccent is unavailable:
 #   - Windows: winget install espeak-ng or download from https://espeak.sourceforge.net/
 # The g2p_ru.py module will look for it at C:\Program Files\eSpeak NG\espeak-ng.exe
 

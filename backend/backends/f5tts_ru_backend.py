@@ -1,10 +1,12 @@
 """
-F5-TTS Russian backend implementation with G2P phonetic conversion.
+F5-TTS Russian backend with automatic stress marking.
 
 Zero-shot voice cloning using the Misha24-10/F5-TTS_RUSSIAN fine-tune of F5-TTS.
-Trained on 5000+ hours of Russian + English speech. Now automatically converts
-Russian Cyrillic text to phonetic representation with stress markers via espeak-ng,
-bypassing vocabulary limitations and providing more accurate pronunciation.
+Trained on 5000+ hours of Russian + English speech.
+
+The model expects Cyrillic text with `+` placed immediately before the stressed
+vowel (e.g. молок+о).  Russian input is automatically tagged by RUAccent before
+synthesis; English input is passed through unchanged.
 
 HuggingFace repo:  Misha24-10/F5-TTS_RUSSIAN  (public, CC-BY-NC-4.0)
 Checkpoint:        F5TTS_v1_Base_v2/model_last_inference.safetensors
@@ -38,16 +40,16 @@ from .base import (
 
 logger = logging.getLogger(__name__)
 
-# Import G2P utility for Russian phonetic conversion
+# Import stress-marking utility for Russian
 try:
-    from ..utils.g2p_ru import convert_russian_to_phonetic, is_espeak_installed
+    from ..utils.g2p_ru import convert_russian_to_phonetic, is_ruaccent_available
 except ImportError as e:
-    logger.debug(f"G2P module not available: {e}")
+    logger.debug("g2p_ru module not available: %s", e)
 
-    def convert_russian_to_phonetic(text, force_en_phones=False):
+    def convert_russian_to_phonetic(text, force_en_phones=False):  # type: ignore[misc]
         return text, False
-    
-    def is_espeak_installed():
+
+    def is_ruaccent_available() -> bool:  # type: ignore[misc]
         return False
 
 
@@ -227,17 +229,15 @@ class F5TTSRuBackend:
         instruct: Optional[str] = None,
     ) -> Tuple[np.ndarray, int]:
         """
-        Generate speech by cloning voice from reference audio with G2P phonetic conversion.
+        Generate speech by cloning voice from reference audio.
 
-        Converts Russian Cyrillic text to phonetic representation with stress markers
-        before passing to the model. This bypasses vocabulary limitations and provides
-        more accurate pronunciation by teaching the model acoustic properties of stressed
-        vs unstressed vowels as distinct entities.
+        Russian Cyrillic input is automatically tagged with `+` stress markers
+        by RUAccent before synthesis (e.g. "хромосомы" → "хромос+омы").
+        This matches the training format of the F5-TTS_RUSSIAN model.
 
         Args:
-            text: Target text to synthesize. For best Russian quality, use
-                  + before stressed vowels (e.g. "молок+о"). Note: G2P will now
-                  automatically convert Cyrillic to phonemes with stress markers.
+            text: Target text. Russian Cyrillic is stress-tagged automatically;
+                  you may also pre-tag manually (e.g. "молок+о").
             voice_prompt: Dict with ref_audio (file path) and ref_text.
             language: Ignored — model handles ru/en natively.
             seed: Optional random seed.
@@ -248,22 +248,28 @@ class F5TTSRuBackend:
         """
         await self.load_model()
 
-        # Convert Russian text to phonetic representation with stress markers
+        # Insert + stress markers into Russian Cyrillic text
         is_ru_language = language.lower().startswith("ru") or any(
             char in text for char in "АаБбВвГгДдЕеЁёЖжЗзИиЙйКкЛлМмНнОоПпРрСсТтУуФфХхЦцЧчШщЪъЫыЬьЭэЮюЯя"
         )
 
         if is_ru_language and text.strip():
-            logger.info("Converting Russian text to phonetic representation...")
-            if is_espeak_installed():
-                phonetic_text, success = convert_russian_to_phonetic(text)
-                if success:
-                    logger.debug(f"Original: {text[:100]}..." if len(text) > 100 else f"Original: {text}")
-                    logger.debug(f"Phonetic: {phonetic_text[:100]}..." if len(phonetic_text) > 100 else f"Phonetic: {phonetic_text}")
-                    text = phonetic_text
+            logger.info("Tagging Russian stress markers...")
+            stressed_text, success = convert_russian_to_phonetic(text)
+            if success:
+                logger.debug("Original: %s", text[:120])
+                logger.debug("Stressed: %s", stressed_text[:120])
+                text = stressed_text
 
         ref_audio = voice_prompt.get("ref_audio")
         ref_text = voice_prompt.get("ref_text", "")
+
+        # Apply stress marking to ref_text too — the model was trained with + markers
+        # in both reference and generated text; mismatched formats hurt stress accuracy.
+        if ref_text and is_ru_language:
+            stressed_ref, ref_ok = convert_russian_to_phonetic(ref_text)
+            if ref_ok:
+                ref_text = stressed_ref
 
         if ref_audio and not Path(ref_audio).exists():
             logger.warning("F5-TTS reference audio not found: %s", ref_audio)

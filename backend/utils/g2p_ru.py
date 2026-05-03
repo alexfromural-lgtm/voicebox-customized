@@ -1,243 +1,214 @@
 """
-Grapheme-to-Phoneme (G2P) conversion for Russian using espeak-ng.
+Russian stress marking for F5-TTS Russian (Misha24-10/F5-TTS_RUSSIAN).
 
-This module converts Cyrillic text into phonetic representations that include
-stress markers directly in the phonemes, bypassing vocabulary limitations and
-providing more accurate pronunciation by teaching the model acoustic properties
-of stressed vs unstressed vowels as distinct entities.
+The F5-TTS Russian model was trained on Cyrillic text with `+` placed before
+the stressed vowel (e.g. молок+о).  This module inserts those markers so the
+model pronounces words with correct stress.
 
-Method: Use espeak-ng to generate phonetic transcriptions where stress is
-explicitly baked into the phoneme itself (e.g., ˈ markers for primary stress).
+Primary approach — RUAccent (ruaccent Python package):
+    Outputs Cyrillic + `+` markers directly.  Recommended by the model author.
 
-Dependencies:
-    - espeak-ng CLI tool must be installed on the system
-    - subprocess module (Python standard library)
+Fallback (when ruaccent is not installed):
+    Returns the original Cyrillic text without stress markers.  The model can
+    still synthesize speech; stress accuracy is lower for uncommon words.
 
 Environment variables:
-    - PHONEMIZER_ESPEAK_PATH: Path to espeak executable (default: searches PATH, then tries common locations)
-    - ESPEAK_DATA_PATH: Path to espeak data directory for Russian voice files
-    
-Example usage:
-    >>> from backend.utils.g2p_ru import convert_russian_to_phonetic
-    >>> text = "Привет, мир!"
-    >>> phonetic = convert_russian_to_phonetic(text)
-    >>> print(phonetic)  # e.g., "prʲɪˈvjet mʲir!"
+    PHONEMIZER_ESPEAK_PATH  Path to the espeak-ng executable or its directory.
+                            Only needed if espeak helpers are used directly.
+    ESPEAK_DATA_PATH        Custom espeak-ng data directory.
 
-Note: This implementation is specifically designed for Russian language.
+Example:
+    >>> from backend.utils.g2p_ru import convert_russian_to_phonetic
+    >>> text, ok = convert_russian_to_phonetic("Привет мир!")
+    >>> print(text)   # e.g. "Прив+ет м+ир!"
 """
 
 import logging
-from pathlib import Path
-import subprocess
 import os
+import subprocess
+from pathlib import Path
 from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# RUAccent — primary stress tagger
+# ---------------------------------------------------------------------------
+
+_ruaccent_instance = None
+_ruaccent_load_attempted = False
+
+
+def _get_ruaccent():
+    """Lazy-load and cache the RUAccent accentizer (downloads model on first use)."""
+    global _ruaccent_instance, _ruaccent_load_attempted
+    if _ruaccent_load_attempted:
+        return _ruaccent_instance
+    _ruaccent_load_attempted = True
+    try:
+        from ruaccent import RUAccent  # type: ignore
+
+        acc = RUAccent()
+        acc.load(omograph_model_size="turbo", use_dictionary=True)
+        _ruaccent_instance = acc
+        logger.info("RUAccent loaded successfully")
+    except Exception as e:
+        logger.warning("RUAccent not available (%s); stress marking will be skipped", e)
+        _ruaccent_instance = None
+    return _ruaccent_instance
+
+
+def is_ruaccent_available() -> bool:
+    """Return True if RUAccent can be loaded."""
+    return _get_ruaccent() is not None
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def convert_russian_to_phonetic(
+    text: str,
+    force_en_phones: bool = False,
+) -> Tuple[str, bool]:
+    """
+    Add stress markers to Russian text for F5-TTS Russian.
+
+    The model expects Cyrillic text with `+` placed immediately before each
+    stressed vowel (e.g. "молок+о").  This function inserts those markers
+    using RUAccent.
+
+    Args:
+        text: Russian Cyrillic text.
+        force_en_phones: Ignored (kept for API compatibility).
+
+    Returns:
+        (marked_text, success)
+        - marked_text: Cyrillic text with `+` stress markers when successful,
+                       or the original text unchanged when not.
+        - success: True when stress markers were inserted, False otherwise.
+    """
+    text = text.strip()
+    if not text:
+        return "", False
+
+    acc = _get_ruaccent()
+    if acc is None:
+        logger.warning(
+            "RUAccent is not installed. Install it with: pip install ruaccent\n"
+            "Falling back to unmarked Cyrillic text — stress may be incorrect."
+        )
+        return text, False
+
+    try:
+        marked = acc.process_all(text)
+        if not marked:
+            logger.error("RUAccent returned empty output for: %s", text[:80])
+            return text, False
+        logger.debug("Stress: %r -> %r", text[:100], marked[:100])
+        return marked, True
+    except Exception as e:
+        logger.error("RUAccent error: %s", e)
+        return text, False
+
+
+def convert_batch_russian_to_phonetic(texts: list) -> list:
+    """
+    Add stress markers to a list of Russian texts.
+
+    Returns a list of (marked_text, success) tuples.
+    """
+    results = []
+    for text in texts:
+        if not isinstance(text, str):
+            continue
+        results.append(convert_russian_to_phonetic(text))
+
+    failed = sum(1 for _, ok in results if not ok)
+    if failed:
+        logger.warning(
+            "Stress marking failed for %d of %d texts", failed, len(results)
+        )
+    return results
+
+
+# ---------------------------------------------------------------------------
+# espeak-ng helpers (kept for potential future use / diagnostics)
+# ---------------------------------------------------------------------------
+
 
 def _get_espeak_path() -> str:
-    """Get the path to espeak executable from environment or common locations."""
-    # Check PHONEMIZER_ESPEAK_PATH first (takes precedence)
+    """
+    Locate the espeak-ng executable.
+
+    Checks PHONEMIZER_ESPEAK_PATH env var first (handles both file and
+    directory values), then falls back to well-known Windows install paths,
+    then PATH.
+    """
     env_path = os.environ.get("PHONEMIZER_ESPEAK_PATH")
     if env_path:
-        return env_path
-    
-    # Try standard Windows paths in order of likelihood
+        p = Path(env_path)
+        if p.is_file():
+            return str(p)
+        # Env var points to a directory — look for the executable inside it
+        for exe_name in ("espeak-ng.exe", "espeak-ng", "espeak.exe", "espeak"):
+            candidate = p / exe_name
+            if candidate.is_file():
+                return str(candidate)
+        # Env var set but executable not found there — fall through
+
     windows_paths = [
         r"C:\Program Files\eSpeak NG\espeak-ng.exe",
         r"C:\Program Files (x86)\eSpeak NG\espeak-ng.exe",
     ]
-    
     for path in windows_paths:
         if Path(path).exists():
             return path
-    
-    # Try to find espeak in PATH as fallback
-    try:
-        result = subprocess.run(
-            ["where", "espeak"],  # Windows command to find executable
-            capture_output=True,
-            text=True,
-            timeout=2,
-            shell=False,
-        )
-        if result.returncode == 0 and result.stdout.strip():
-            path = Path(result.stdout.split()[0]).resolve()
-            return str(path)
-    except Exception:
-        pass
-    
+
+    # Try PATH
+    for cmd_name in ("espeak-ng", "espeak"):
+        try:
+            result = subprocess.run(
+                ["where", cmd_name],
+                capture_output=True,
+                text=True,
+                timeout=2,
+                shell=False,
+            )
+            if result.returncode == 0 and result.stdout.strip():
+                first_line = result.stdout.strip().splitlines()[0]
+                return str(Path(first_line).resolve())
+        except Exception:
+            pass
+
     raise RuntimeError(
-        "espeak-ng executable not found. Please install espeak-ng or set PHONEMIZER_ESPEAK_PATH environment variable."
+        "espeak-ng executable not found. "
+        "Install it or set the PHONEMIZER_ESPEAK_PATH environment variable."
     )
 
 
 def _get_espeak_data_path() -> Optional[str]:
-    """Get the path to espeak data directory from environment."""
+    """Return the custom espeak data path from ESPEAK_DATA_PATH, if set."""
     return os.environ.get("ESPEAK_DATA_PATH")
 
 
 def _check_espeak_available() -> bool:
-    """Check if espeak-ng is available and functional."""
+    """Return True if espeak-ng is installed and responsive."""
     try:
-        # Use environment variable or default path
         executable = _get_espeak_path()
-        
         result = subprocess.run(
             [executable, "--version"],
             capture_output=True,
             text=True,
             timeout=5,
         )
-        
         return result.returncode == 0
     except Exception:
         logger.debug("espeak-ng not available")
         return False
 
 
-def convert_russian_to_phonetic(
-    text: str, force_en_phones: bool = False
-) -> Tuple[str, bool]:
-    """
-    Convert Russian text to phonetic representation with stress markers.
-    
-    Args:
-        text: Russian text in Cyrillic script
-        force_en_phones: If True, return English IPA phones for non-Russian chars
-        
-    Returns:
-        Tuple of (phonetic_text, success)
-        - phonetic_text: Text converted to phonemes with stress markers
-        - success: Boolean indicating if conversion was successful
-    """
-    text = text.strip()
-    if not text:
-        return "", False
-    
-    # Check espeak availability once at function level
-    available = _check_espeak_available()
-    
-    if not available:
-        logger.error(
-            "espeak-ng is required for Russian G2P conversion but not installed. "
-            "Please install espeak-ng from your package manager or set PHONEMIZER_ESPEAK_PATH environment variable."
-        )
-        return text, False
-    
-    # Get data path if specified (for custom voice packs)
-    data_path = _get_espeak_data_path()
-    
-    # Build command with optional data path
-    # Use -q for quiet mode and --stdout to capture output
-    cmd_base = [_get_espeak_path(), "-q", "--stdout"]
-    
-    if data_path:
-        cmd_base.extend(["--path=" + str(data_path)])  # Use custom data directory
-    else:
-        # Use Russian voice from default location
-        cmd_base.append("-vru")
-    
-    cmd = cmd_base + ["--ipa", "-s0"]  # IPA phonemes, speed 0 (default)
-    cmd.extend([text])
-    
-    try:
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            env=dict(os.environ),  # Pass environment including ESPEAK_DATA_PATH if set
-        )
-        
-        if result.returncode != 0:
-            logger.error("espeak failed: %s", result.stderr.strip())
-            return text, False
-        
-        phonetic = result.stdout.strip()
-    except subprocess.TimeoutExpired:
-        logger.error("espeak conversion timed out")
-        return text, False
-    except Exception as e:
-        logger.error(f"Unexpected error in espeak conversion: {e}")
-        return text, False
-    
-    if force_en_phones:
-        # Replace non-ASCII Russian chars with their IPA equivalents
-        phonetic = _replace_cyrillic_with_ipa(text, phonetic)
-    
-    return phonetic, True
-
-
-def _replace_cyrillic_with_ipa(text: str, phonetic: str) -> str:
-    """
-    Replace Cyrillic characters with IPA equivalents when forcing English phones.
-    
-    This is a fallback approach that maps common Russian graphemes to IPA symbols.
-    Note: This loses stress information and should only be used as a last resort.
-    """
-    # Map common Russian letters/consonants to IPA
-    cyrillic_to_ipa = {
-        "А": "a", "а": "a", "Б": "b", "б": "b", "В": "v", "в": "v", "Г": "ɡ", "г": "ɡ",
-        "Д": "d", "д": "d", "Е": "jɛ", "е": "jɛ", "Ё": "jo", "ё": "jo", "Ж": "ʐ", "ж": "ʐ",
-        "З": "z", "з": "z", "И": "i", "и": "i", "Й": "j", "й": "j", "К": "k", "к": "k",
-        "Л": "l", "л": "l", "М": "m", "м": "m", "Н": "n", "н": "n", "О": "o", "о": "o",
-        "П": "p", "п": "p", "Р": "r", "р": "r", "С": "s", "с": "s", "Т": "t", "т": "t",
-        "У": "u", "у": "u", "Ф": "f", "ф": "f", "Х": "x", "х": "x", "Ц": "ts", "ц": "ts",
-        "Ч": "tʃ", "ч": "tʃ", "Ш": "ʂ", "ш": "ʂ", "Щ": "ʂː", "щ": "ʂː", "Ъ": "", "ъ": "",
-        "Ы": "ɯ", "ы": "ɯ", "Ь": "ʲ", "ь": "ʲ", "Э": "ɛ", "э": "ɛ", "Ю": "ju", "ю": "ju",
-        "Я": "ja", "я": "ja",
-    }
-    
-    result = []
-    for char in phonetic:
-        if ord(char) > 127:  # Keep IPA symbols
-            result.append(char)
-        else:
-            # Try to find a mapping for the character
-            found = False
-            for ru, ipa in cyrillic_to_ipa.items():
-                if char == ru or char == ru.lower() or char == ru.upper():
-                    result.append(ipa[0] if len(ipa) == 1 else ipa)  # Simplified mapping
-                    found = True
-                    break
-            if not found:
-                result.append(char)
-    
-    return "".join(result)
-
-
-def convert_batch_russian_to_phonetic(texts: list[str]) -> list[tuple[str, bool]]:
-    """
-    Convert multiple Russian texts to phonetic representations.
-    
-    Args:
-        texts: List of Russian text strings
-        
-    Returns:
-        List of tuples (phonetic_text, success) for each input text
-    """
-    results = []
-    for text in texts:
-        if not isinstance(text, str):
-            continue
-        phonetic, success = convert_russian_to_phonetic(text)
-        results.append((phonetic, success))
-    
-    # Count failures and log summary
-    total = len([r for r in results if r[1]])
-    failed = len([r for r in results if not r[1]])
-    if failed > 0:
-        logger.warning("G2P conversion failed for %d of %d texts", failed, total + failed)
-    
-    return results
-
-
 def is_espeak_installed() -> bool:
-    """
-    Check if espeak-ng is installed and available.
-    
-    Returns:
-        True if espeak-ng is installed and functional, False otherwise
-    """
+    """Return True if espeak-ng is installed and functional."""
     return _check_espeak_available()
