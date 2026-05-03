@@ -25,6 +25,7 @@ Example:
 
 import logging
 import os
+import re
 import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
@@ -61,6 +62,47 @@ def _get_ruaccent():
 def is_ruaccent_available() -> bool:
     """Return True if RUAccent can be loaded."""
     return _get_ruaccent() is not None
+
+
+# ---------------------------------------------------------------------------
+# Manual stress override helpers
+# ---------------------------------------------------------------------------
+
+# Matches a + that is immediately followed by a Cyrillic vowel — the only
+# valid way a user can manually mark stress.
+_MANUAL_STRESS_RE = re.compile(r"\+[аеёиоуыэюяАЕЁИОУЫЭЮЯ]")
+
+# Matches a contiguous Cyrillic word (possibly containing + markers).
+_CYR_WORD_RE = re.compile(r"[а-яёА-ЯЁ+]+")
+
+
+def _strip_stress(word: str) -> str:
+    return word.replace("+", "")
+
+
+def _apply_manual_overrides(original: str, accented: str) -> str:
+    """
+    Replace words in *accented* with the user's hand-marked versions from *original*.
+
+    For each Cyrillic word in *original* that already contains a `+` before a
+    vowel, find the matching word in *accented* (by base form, case-insensitive)
+    and restore the user's original form, discarding RUAccent's guess.
+
+    Words without a manual marker are left as RUAccent produced them.
+    """
+    manual = {
+        _strip_stress(w).lower(): w
+        for w in _CYR_WORD_RE.findall(original)
+        if _MANUAL_STRESS_RE.search(w)
+    }
+    if not manual:
+        return accented
+
+    def _restore(m: re.Match) -> str:
+        base = _strip_stress(m.group()).lower()
+        return manual.get(base, m.group())
+
+    return _CYR_WORD_RE.sub(_restore, accented)
 
 
 # ---------------------------------------------------------------------------
@@ -106,6 +148,9 @@ def convert_russian_to_phonetic(
         if not marked:
             logger.error("RUAccent returned empty output for: %s", text[:80])
             return text, False
+        # Restore any word the user already hand-marked with + so that
+        # RUAccent's auto-stress never overwrites an explicit manual choice.
+        marked = _apply_manual_overrides(text, marked)
         logger.debug("Stress: %r -> %r", text[:100], marked[:100])
         return marked, True
     except Exception as e:
