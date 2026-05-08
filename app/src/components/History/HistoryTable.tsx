@@ -46,6 +46,7 @@ import { useToast } from '@/components/ui/use-toast';
 import { apiClient } from '@/lib/api/client';
 import type { EffectConfig, GenerationVersionResponse, HistoryResponse } from '@/lib/api/types';
 import { BOTTOM_SAFE_AREA_PADDING } from '@/lib/constants/ui';
+import type { ExportFormat } from '@/lib/hooks/useHistory';
 import {
   useClearFailedGenerations,
   useDeleteGeneration,
@@ -138,6 +139,7 @@ export function HistoryTable() {
   const importGeneration = useImportGeneration();
   const { exportAll, isExporting, progress: exportProgress } = useExportAllAudio();
   const [exportAllDialogOpen, setExportAllDialogOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('wav');
   const cancelGeneration = useMutation({
     mutationFn: (generationId: string) => apiClient.cancelGeneration(generationId),
     onSuccess: async (data) => {
@@ -477,10 +479,11 @@ export function HistoryTable() {
     setExportAllDialogOpen(false);
     exportAll(
       exportableItems.map((g) => ({ id: g.id })),
+      exportFormat,
       (count) => {
         toast({
           title: 'Export complete',
-          description: `${count} file${count === 1 ? '' : 's'} saved successfully.`,
+          description: `${count} file${count === 1 ? '' : 's'} saved as .${exportFormat}.`,
         });
       },
       (err, index) => {
@@ -1012,10 +1015,39 @@ export function HistoryTable() {
             <DialogTitle>Export All Audio</DialogTitle>
             <DialogDescription>
               {exportableItems.length} audio file{exportableItems.length === 1 ? '' : 's'} will be
-              exported as 01.wav, 02.wav, … to a folder you choose. In-progress and failed items are
-              skipped.
+              exported as numbered files (01, 02, …) to a folder you choose. In-progress and failed
+              items are skipped.
             </DialogDescription>
           </DialogHeader>
+
+          {/* Format selector */}
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-muted-foreground">Output format</span>
+            <div className="flex gap-2">
+              {(['wav', 'mp3'] as ExportFormat[]).map((fmt) => (
+                <button
+                  key={fmt}
+                  type="button"
+                  onClick={() => setExportFormat(fmt)}
+                  className={[
+                    'flex-1 rounded-md border py-1.5 text-xs font-medium transition-colors',
+                    exportFormat === fmt
+                      ? 'border-accent bg-accent/10 text-accent'
+                      : 'border-border text-muted-foreground hover:border-accent/50 hover:text-foreground',
+                  ].join(' ')}
+                >
+                  .{fmt.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            {exportFormat === 'mp3' && (
+              <p className="text-[11px] text-muted-foreground">
+                Files will be encoded at 128 kbps. Encoding happens locally — no data leaves your
+                device.
+              </p>
+            )}
+          </div>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setExportAllDialogOpen(false)}>
               {t('common.cancel')}

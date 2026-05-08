@@ -110,6 +110,66 @@ export interface ExportAllProgress {
   total: number;
 }
 
+export type ExportFormat = 'wav' | 'mp3';
+
+/** Encode a stereo or mono float32 PCM array into an MP3 Uint8Array using lamejs. */
+async function encodeWavToMp3(wavBlob: Blob): Promise<Uint8Array> {
+  // Dynamically import lamejs to keep the bundle lean
+  const { Mp3Encoder } = await import('@breezystack/lamejs');
+
+  // Decode WAV → raw PCM via Web Audio API
+  const arrayBuffer = await wavBlob.arrayBuffer();
+  const audioCtx = new AudioContext();
+  const audioBuffer = await audioCtx.decodeAudioData(arrayBuffer);
+  await audioCtx.close();
+
+  const numChannels = Math.min(audioBuffer.numberOfChannels, 2) as 1 | 2;
+  const sampleRate = audioBuffer.sampleRate;
+  const kbps = 128;
+  const encoder = new Mp3Encoder(numChannels, sampleRate, kbps);
+
+  // Convert float32 [-1,1] → int16
+  const toInt16 = (float32: Float32Array): Int16Array => {
+    const int16 = new Int16Array(float32.length);
+    for (let i = 0; i < float32.length; i++) {
+      const s = Math.max(-1, Math.min(1, float32[i]));
+      int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+    }
+    return int16;
+  };
+
+  const leftF32 = audioBuffer.getChannelData(0);
+  const rightF32 = numChannels === 2 ? audioBuffer.getChannelData(1) : leftF32;
+  const leftInt16 = toInt16(leftF32);
+  const rightInt16 = toInt16(rightF32);
+
+  const chunkSize = 1152;
+  const chunks: Uint8Array[] = [];
+
+  for (let i = 0; i < leftInt16.length; i += chunkSize) {
+    const leftChunk = leftInt16.subarray(i, i + chunkSize);
+    const rightChunk = rightInt16.subarray(i, i + chunkSize);
+    const encoded =
+      numChannels === 2
+        ? encoder.encodeBuffer(leftChunk, rightChunk)
+        : encoder.encodeBuffer(leftChunk);
+    if (encoded.length > 0) chunks.push(new Uint8Array(encoded));
+  }
+
+  const flushed = encoder.flush();
+  if (flushed.length > 0) chunks.push(new Uint8Array(flushed));
+
+  // Concatenate all chunks
+  const totalLength = chunks.reduce((acc, c) => acc + c.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return result;
+}
+
 export function useExportAllAudio() {
   const platform = usePlatform();
   const [isExporting, setIsExporting] = useState(false);
@@ -117,6 +177,7 @@ export function useExportAllAudio() {
 
   const exportAll = async (
     items: Array<{ id: string }>,
+    format: ExportFormat,
     onComplete?: (count: number) => void,
     onError?: (err: Error, index: number) => void,
   ) => {
@@ -136,10 +197,16 @@ export function useExportAllAudio() {
       for (let i = 0; i < items.length; i++) {
         const { id } = items[i];
         const blob = await apiClient.exportGenerationAudio(id);
-        const arrayBuffer = await blob.arrayBuffer();
-        // Zero-padded sequential name: 01.wav, 02.wav, …
-        const filename = String(i + 1).padStart(2, '0') + '.wav';
-        await writeFile(`${dir}\\${filename}`, new Uint8Array(arrayBuffer));
+        const ext = format === 'mp3' ? 'mp3' : 'wav';
+        // Zero-padded sequential name: 01.wav / 01.mp3, …
+        const filename = String(i + 1).padStart(2, '0') + '.' + ext;
+        let fileBytes: Uint8Array;
+        if (format === 'mp3') {
+          fileBytes = await encodeWavToMp3(blob);
+        } else {
+          fileBytes = new Uint8Array(await blob.arrayBuffer());
+        }
+        await writeFile(`${dir}\\${filename}`, fileBytes);
         setProgress({ current: i + 1, total: items.length });
       }
 
