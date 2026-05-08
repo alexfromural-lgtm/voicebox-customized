@@ -140,6 +140,7 @@ export function HistoryTable() {
   const { exportAll, isExporting, progress: exportProgress } = useExportAllAudio();
   const [exportAllDialogOpen, setExportAllDialogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('wav');
+  const [joinFiles, setJoinFiles] = useState(false);
   const cancelGeneration = useMutation({
     mutationFn: (generationId: string) => apiClient.cancelGeneration(generationId),
     onSuccess: async (data) => {
@@ -480,10 +481,13 @@ export function HistoryTable() {
     exportAll(
       exportableItems.map((g) => ({ id: g.id })),
       exportFormat,
+      joinFiles,
       (count) => {
         toast({
           title: 'Export complete',
-          description: `${count} file${count === 1 ? '' : 's'} saved as .${exportFormat}.`,
+          description: joinFiles
+            ? `${count} files merged into a single .${exportFormat}.`
+            : `${count} file${count === 1 ? '' : 's'} saved as .${exportFormat}.`,
         });
       },
       (err, index) => {
@@ -1014,9 +1018,10 @@ export function HistoryTable() {
           <DialogHeader>
             <DialogTitle>Export All Audio</DialogTitle>
             <DialogDescription>
-              {exportableItems.length} audio file{exportableItems.length === 1 ? '' : 's'} will be
-              exported as numbered files (01, 02, …) to a folder you choose. In-progress and failed
-              items are skipped.
+              {joinFiles
+                ? `${exportableItems.length} file${exportableItems.length === 1 ? '' : 's'} will be merged into a single .${exportFormat} file you save to disk.`
+                : `${exportableItems.length} audio file${exportableItems.length === 1 ? '' : 's'} will be exported as numbered files (01, 02, …) to a folder you choose.`}{' '}
+              In-progress and failed items are skipped.
             </DialogDescription>
           </DialogHeader>
 
@@ -1048,13 +1053,47 @@ export function HistoryTable() {
             )}
           </div>
 
+          {/* Join toggle */}
+          <button
+            type="button"
+            onClick={() => setJoinFiles((v) => !v)}
+            className="flex items-center gap-2.5 w-full rounded-md border px-3 py-2.5 text-left transition-colors hover:border-accent/50"
+          >
+            {/* custom checkbox */}
+            <span
+              className={[
+                'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
+                joinFiles ? 'border-accent bg-accent' : 'border-muted-foreground/40',
+              ].join(' ')}
+            >
+              {joinFiles && (
+                <svg viewBox="0 0 10 8" fill="none" className="h-2.5 w-2.5">
+                  <path
+                    d="M1 4l2.5 2.5L9 1"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="text-accent-foreground"
+                  />
+                </svg>
+              )}
+            </span>
+            <span className="flex flex-col gap-0.5">
+              <span className="text-xs font-medium">Join into a single file</span>
+              <span className="text-[11px] text-muted-foreground">
+                Concatenates all clips in order into one {exportFormat.toUpperCase()}
+              </span>
+            </span>
+          </button>
+
           <DialogFooter>
             <Button variant="outline" onClick={() => setExportAllDialogOpen(false)}>
               {t('common.cancel')}
             </Button>
             <Button onClick={handleExportAllConfirm}>
               <FolderDown className="mr-2 h-4 w-4" />
-              Choose folder &amp; export
+              {joinFiles ? 'Choose file & export' : 'Choose folder & export'}
             </Button>
           </DialogFooter>
         </DialogContent>
