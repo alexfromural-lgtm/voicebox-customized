@@ -496,7 +496,16 @@
       "exportAudio": "Export Audio",
       "exportPackage": "Export Package",
       "applyEffects": "Apply Effects",
-      "regenerate": "Regenerate"
+      "regenerate": "Regenerate",
+      "deleteAll": "Delete All"
+    },
+    "deleteAllDialog": {
+      "title": "Delete All Generations",
+      "body": "This will permanently delete all {{count}} generations from your history. This action cannot be undone.",
+      "confirm": "Delete All",
+      "deleting": "Deleting…",
+      "successTitle": "All generations deleted",
+      "errorTitle": "Failed to delete all"
     },
     "deleteDialog": {
       "title": "Delete Generation",

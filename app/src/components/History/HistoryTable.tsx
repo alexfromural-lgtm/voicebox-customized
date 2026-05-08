@@ -30,6 +30,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -128,6 +129,8 @@ export function HistoryTable() {
   const deleteGeneration = useDeleteGeneration();
   const clearFailed = useClearFailedGenerations();
   const [clearFailedDialogOpen, setClearFailedDialogOpen] = useState(false);
+  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
   const exportGeneration = useExportGeneration();
   const exportGenerationAudio = useExportGenerationAudio();
   const importGeneration = useImportGeneration();
@@ -284,6 +287,28 @@ export function HistoryTable() {
       deleteGeneration.mutate(generationToDelete.id);
       setDeleteDialogOpen(false);
       setGenerationToDelete(null);
+    }
+  };
+
+  const handleDeleteAll = async () => {
+    setIsDeletingAll(true);
+    try {
+      for (const gen of allHistory) {
+        await apiClient.deleteGeneration(gen.id);
+      }
+      queryClient.invalidateQueries({ queryKey: ['history'] });
+      setPage(0);
+      setAllHistory([]);
+      toast({ title: t('history.deleteAllDialog.successTitle') });
+    } catch (error) {
+      toast({
+        title: t('history.deleteAllDialog.errorTitle'),
+        description: error instanceof Error ? error.message : String(error),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeletingAll(false);
+      setDeleteAllDialogOpen(false);
     }
   };
 
@@ -715,6 +740,15 @@ export function HistoryTable() {
                               <Trash2 className="mr-2 h-4 w-4" />
                               {t('common.delete')}
                             </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => setDeleteAllDialogOpen(true)}
+                              disabled={deleteGeneration.isPending || isDeletingAll}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              {t('history.actions.deleteAll')}
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       )}
@@ -826,6 +860,33 @@ export function HistoryTable() {
               disabled={deleteGeneration.isPending}
             >
               {deleteGeneration.isPending ? t('history.deleteDialog.deleting') : t('common.delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={deleteAllDialogOpen} onOpenChange={setDeleteAllDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('history.deleteAllDialog.title')}</DialogTitle>
+            <DialogDescription>
+              {t('history.deleteAllDialog.body', { count: allHistory.length })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setDeleteAllDialogOpen(false)}
+              disabled={isDeletingAll}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleDeleteAll}
+              disabled={isDeletingAll}
+            >
+              {isDeletingAll ? t('history.deleteAllDialog.deleting') : t('history.deleteAllDialog.confirm')}
             </Button>
           </DialogFooter>
         </DialogContent>
