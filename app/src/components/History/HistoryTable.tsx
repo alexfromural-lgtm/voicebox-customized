@@ -4,6 +4,7 @@ import {
   AudioLines,
   Download,
   FileArchive,
+  FolderDown,
   Loader2,
   MoreHorizontal,
   Play,
@@ -48,6 +49,7 @@ import { BOTTOM_SAFE_AREA_PADDING } from '@/lib/constants/ui';
 import {
   useClearFailedGenerations,
   useDeleteGeneration,
+  useExportAllAudio,
   useExportGeneration,
   useExportGenerationAudio,
   useHistory,
@@ -134,6 +136,8 @@ export function HistoryTable() {
   const exportGeneration = useExportGeneration();
   const exportGenerationAudio = useExportGenerationAudio();
   const importGeneration = useImportGeneration();
+  const { exportAll, isExporting, progress: exportProgress } = useExportAllAudio();
+  const [exportAllDialogOpen, setExportAllDialogOpen] = useState(false);
   const cancelGeneration = useMutation({
     mutationFn: (generationId: string) => apiClient.cancelGeneration(generationId),
     onSuccess: async (data) => {
@@ -312,6 +316,7 @@ export function HistoryTable() {
     }
   };
 
+
   const handleRetry = async (generationId: string) => {
     try {
       const result = await apiClient.retryGeneration(generationId);
@@ -463,6 +468,31 @@ export function HistoryTable() {
   const hasMore = allHistory.length < total;
   const failedCount = history.filter((g) => g.status === 'failed').length;
 
+  // Completed (non-failed, non-generating) items available for batch export
+  const exportableItems = history.filter(
+    (g) => g.status !== 'failed' && g.status !== 'loading_model' && g.status !== 'generating',
+  );
+
+  const handleExportAllConfirm = () => {
+    setExportAllDialogOpen(false);
+    exportAll(
+      exportableItems.map((g) => ({ id: g.id })),
+      (count) => {
+        toast({
+          title: 'Export complete',
+          description: `${count} file${count === 1 ? '' : 's'} saved successfully.`,
+        });
+      },
+      (err, index) => {
+        toast({
+          title: `Export failed at file ${index + 1}`,
+          description: err.message,
+          variant: 'destructive',
+        });
+      },
+    );
+  };
+
   const handleClearFailedConfirm = () => {
     clearFailed.mutate(undefined, {
       onSuccess: (data) => {
@@ -491,21 +521,46 @@ export function HistoryTable() {
         </div>
       ) : (
         <>
-          {failedCount > 0 && (
+          {/* Toolbar: Export All + Clear Failed */}
+          {(exportableItems.length > 0 || failedCount > 0) && (
             <div className="flex items-center justify-between px-1 pb-2">
-              <span className="text-xs text-muted-foreground">
-                {failedCount} failed {failedCount === 1 ? 'generation' : 'generations'}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 text-xs text-muted-foreground hover:text-destructive"
-                onClick={() => setClearFailedDialogOpen(true)}
-                disabled={clearFailed.isPending}
-              >
-                <Trash2 className="h-3 w-3 mr-1.5" />
-                {clearFailed.isPending ? 'Clearing...' : 'Clear failed'}
-              </Button>
+              <div className="flex items-center gap-1">
+                {exportableItems.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                    onClick={() => setExportAllDialogOpen(true)}
+                    disabled={isExporting}
+                  >
+                    {isExporting ? (
+                      <>
+                        <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
+                        {exportProgress
+                          ? `Exporting ${exportProgress.current}/${exportProgress.total}…`
+                          : 'Exporting…'}
+                      </>
+                    ) : (
+                      <>
+                        <FolderDown className="h-3 w-3 mr-1.5" />
+                        Export All ({exportableItems.length})
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+              {failedCount > 0 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs text-muted-foreground hover:text-destructive"
+                  onClick={() => setClearFailedDialogOpen(true)}
+                  disabled={clearFailed.isPending}
+                >
+                  <Trash2 className="h-3 w-3 mr-1.5" />
+                  {clearFailed.isPending ? 'Clearing...' : 'Clear failed'}
+                </Button>
+              )}
             </div>
           )}
           {isScrolled && (
@@ -945,6 +1000,29 @@ export function HistoryTable() {
               {importGeneration.isPending
                 ? t('history.importDialog.importing')
                 : t('history.importDialog.action')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Export All confirmation dialog */}
+      <Dialog open={exportAllDialogOpen} onOpenChange={setExportAllDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Export All Audio</DialogTitle>
+            <DialogDescription>
+              {exportableItems.length} audio file{exportableItems.length === 1 ? '' : 's'} will be
+              exported as 01.wav, 02.wav, … to a folder you choose. In-progress and failed items are
+              skipped.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExportAllDialogOpen(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button onClick={handleExportAllConfirm}>
+              <FolderDown className="mr-2 h-4 w-4" />
+              Choose folder &amp; export
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/lib/api/client';
 import type { HistoryQuery } from '@/lib/api/types';
 import { usePlatform } from '@/platform/PlatformContext';
+
 
 export function useHistory(query?: HistoryQuery) {
   return useQuery({
@@ -101,4 +103,55 @@ export function useImportGeneration() {
       queryClient.invalidateQueries({ queryKey: ['history'] });
     },
   });
+}
+
+export interface ExportAllProgress {
+  current: number;
+  total: number;
+}
+
+export function useExportAllAudio() {
+  const platform = usePlatform();
+  const [isExporting, setIsExporting] = useState(false);
+  const [progress, setProgress] = useState<ExportAllProgress | null>(null);
+
+  const exportAll = async (
+    items: Array<{ id: string }>,
+    onComplete?: (count: number) => void,
+    onError?: (err: Error, index: number) => void,
+  ) => {
+    if (items.length === 0) return;
+
+    // 1. Let the user pick a destination folder once
+    const dir = await platform.filesystem.pickDirectory('Choose export folder');
+    if (!dir) return; // user cancelled
+
+    setIsExporting(true);
+    setProgress({ current: 0, total: items.length });
+
+    try {
+      // Import Tauri writeFile — same plugin already used by saveFile
+      const { writeFile } = await import('@tauri-apps/plugin-fs');
+
+      for (let i = 0; i < items.length; i++) {
+        const { id } = items[i];
+        const blob = await apiClient.exportGenerationAudio(id);
+        const arrayBuffer = await blob.arrayBuffer();
+        // Zero-padded sequential name: 01.wav, 02.wav, …
+        const filename = String(i + 1).padStart(2, '0') + '.wav';
+        await writeFile(`${dir}\\${filename}`, new Uint8Array(arrayBuffer));
+        setProgress({ current: i + 1, total: items.length });
+      }
+
+      onComplete?.(items.length);
+    } catch (err) {
+      const index = progress?.current ?? 0;
+      onError?.(err instanceof Error ? err : new Error(String(err)), index);
+    } finally {
+      setIsExporting(false);
+      setProgress(null);
+    }
+  };
+
+  return { exportAll, isExporting, progress };
 }
