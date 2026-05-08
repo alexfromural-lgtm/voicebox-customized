@@ -553,7 +553,12 @@
       "emptyTranslation": "Please provide a translation before generating speech",
       "translationFailed": "Failed translation message",
       "textTooLong": "Text is too long ({{count}} / {{max}} characters). Please shorten it before translating."
-    },    
+    },
+    "chunked": {
+      "started": "Chunked generation started",
+      "description": "Text split into {{count}} chunks. Each will be translated and generated.",
+      "done": "Done: {{successCount}} / {{total}} chunks generated"
+    },
     "instruct": {
       "show": "Show delivery instructions",
       "hide": "Hide delivery instructions",

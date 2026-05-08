@@ -265,6 +265,29 @@ export function FloatingGenerateBox({
   // Translate button: translate text, fill the form, submit generate (saves to history)
   const [isTranslating, setIsTranslating] = useState(false);
 
+  /**
+   * Split text into chunks of at most maxChars characters,
+   * preferring to break at whitespace so words are not cut in half.
+   */
+  function splitTextIntoChunks(text: string, maxChars: number): string[] {
+    const chunks: string[] = [];
+    let remaining = text;
+    while (remaining.length > maxChars) {
+      // Try to find the last whitespace within the limit
+      let splitAt = remaining.lastIndexOf(' ', maxChars);
+      if (splitAt <= 0) {
+        // No whitespace found — hard-cut at the limit
+        splitAt = maxChars;
+      }
+      chunks.push(remaining.slice(0, splitAt).trim());
+      remaining = remaining.slice(splitAt).trim();
+    }
+    if (remaining.length > 0) {
+      chunks.push(remaining);
+    }
+    return chunks;
+  }
+
   const handleTranslateAndSynthesize = async () => {
     if (!selectedProfileId) return;
 
@@ -279,6 +302,68 @@ export function FloatingGenerateBox({
     }
 
     const TRANSLATE_MAX_CHARS = 1800;
+    const currentEngine = form.getValues('engine');
+    const isF5TtsRu = currentEngine === 'f5tts_ru';
+
+    // For F5-TTS Russian with long text: split into chunks and process each one
+    if (textValue.length > TRANSLATE_MAX_CHARS && isF5TtsRu) {
+      const chunks = splitTextIntoChunks(textValue, TRANSLATE_MAX_CHARS);
+
+      const availableTranslationLanguages = ['en', 'zh', 'ja', 'ko', 'de', 'fr', 'ru', 'pt', 'es', 'it'] as const;
+      const currentLang = form.getValues('language');
+      const translationLang = availableTranslationLanguages.find((lang: TranslationLanguage) => lang === currentLang);
+
+      if (!translationLang) {
+        toast({
+          title: t('global.error'),
+          description: `Selected language "${currentLang}" is not supported for translation. Please change it.`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setIsTranslating(true);
+      toast({
+        title: t('generation.chunked.started'),
+        description: t('generation.chunked.description', { count: chunks.length }),
+      });
+
+      let successCount = 0;
+      try {
+        for (let i = 0; i < chunks.length; i++) {
+          const chunk = chunks[i];
+          // Translate this chunk
+          const result = await apiClient.translateText(chunk, translationLang);
+          if (!result.translated_text) continue;
+
+          // Put translated chunk into the form and generate
+          form.setValue('text', result.translated_text, { shouldValidate: true });
+          await form.handleSubmit(onSubmit)();
+          successCount++;
+        }
+
+        // Restore the original text in the input after all chunks are processed
+        form.setValue('text', textValue, { shouldValidate: false });
+
+        toast({
+          title: t('generation.chunked.done', { successCount, total: chunks.length }),
+        });
+      } catch (error) {
+        console.error('Chunked translation failed:', error);
+        // Restore original text on error too
+        form.setValue('text', textValue, { shouldValidate: false });
+        toast({
+          title: t('global.error'),
+          description: t('generation.errors.translationFailed'),
+          variant: 'destructive',
+        });
+      } finally {
+        setIsTranslating(false);
+      }
+      return;
+    }
+
+    // Standard path: text within limit
     if (textValue.length > TRANSLATE_MAX_CHARS) {
       toast({
         title: t('global.error'),
@@ -466,24 +551,26 @@ export function FloatingGenerateBox({
 
                 {/* Translate button — translates text then auto-submits generate */}
                 {!isPending && (
-                  <Button
-                    type="button"
-                    onClick={handleTranslateAndSynthesize}
-                    disabled={isTranslating || !selectedProfileId || form.getValues('text').trim() === ''}
-                    variant="secondary"
-                    className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/90 text-secondary-foreground transition-all duration-200 relative group"
-                    size="icon"
-                    aria-label={isTranslating ? t('generation.button.translating') : t('generation.button.translate')}
-                  >
-                    {isTranslating ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <Globe className="h-4 w-4" />
-                    )}
+                  <div className="group relative">
+                    <Button
+                      type="button"
+                      onClick={handleTranslateAndSynthesize}
+                      disabled={isTranslating || !selectedProfileId || form.getValues('text').trim() === ''}
+                      variant="secondary"
+                      className="h-10 w-10 rounded-full bg-secondary hover:bg-secondary/90 text-secondary-foreground transition-all duration-200"
+                      size="icon"
+                      aria-label={isTranslating ? t('generation.button.translating') : t('generation.button.translate')}
+                    >
+                      {isTranslating ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Globe className="h-4 w-4" />
+                      )}
+                    </Button>
                     <span className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 whitespace-nowrap rounded-md bg-popover px-3 py-1.5 text-xs text-popover-foreground border border-border opacity-0 transition-opacity group-hover:opacity-100 z-[9999]">
                       {isTranslating ? t('generation.button.translating') : t('generation.button.translate')}
                     </span>
-                  </Button>
+                  </div>
                 )}
 
 
