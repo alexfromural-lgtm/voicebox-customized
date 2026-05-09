@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AudioLines,
+  ChevronsDown,
   Download,
   FileArchive,
   FolderDown,
@@ -14,7 +15,7 @@ import {
   Trash2,
   Wand2,
 } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { EffectsChainEditor } from '@/components/Effects/EffectsChainEditor';
@@ -98,6 +99,8 @@ export function HistoryTable() {
   const [allHistory, setAllHistory] = useState<HistoryResponse[]>([]);
   const [total, setTotal] = useState(0);
   const [isScrolled, setIsScrolled] = useState(false);
+  const [isLoadingAll, setIsLoadingAll] = useState(false);
+  const loadAllRef = useRef(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -183,6 +186,32 @@ export function HistoryTable() {
       }
     }
   }, [historyData, page]);
+
+  // Drive load-all: keep advancing page until everything is fetched
+  useEffect(() => {
+    if (!loadAllRef.current) return;
+    if (isFetching) return;
+    if (historyData && allHistory.length < historyData.total) {
+      setPage((prev) => prev + 1);
+    } else {
+      // All pages loaded — scroll to bottom and clean up
+      loadAllRef.current = false;
+      setIsLoadingAll(false);
+      requestAnimationFrame(() => {
+        scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
+      });
+    }
+  }, [isFetching, allHistory.length, historyData]);
+
+  const handleLoadAll = useCallback(() => {
+    if (isLoadingAll) return;
+    loadAllRef.current = true;
+    setIsLoadingAll(true);
+    // Kick off the first extra page if we're not already fetching
+    if (!isFetching && allHistory.length < total) {
+      setPage((prev) => prev + 1);
+    }
+  }, [isLoadingAll, isFetching, allHistory.length, total]);
 
   // Reset to page 0 when deletions, imports, or generation completions occur
   const pendingCount = useGenerationStore((state) => state.pendingGenerationIds.size);
@@ -895,6 +924,29 @@ export function HistoryTable() {
               </div>
             )}
           </div>
+
+          {/* Load-all floating button */}
+          {hasMore && (
+            <button
+              type="button"
+              onClick={handleLoadAll}
+              disabled={isLoadingAll}
+              title={`Load all ${total} items`}
+              aria-label={`Load all ${total} items`}
+              className="absolute bottom-4 right-2 z-20 flex items-center gap-1 rounded-full border border-border/60 bg-background/90 px-2.5 py-1 text-[11px] font-medium text-muted-foreground shadow-md backdrop-blur-sm transition-all hover:border-accent/60 hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isLoadingAll ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <ChevronsDown className="h-3 w-3" />
+              )}
+              {isLoadingAll
+                ? `${allHistory.length} / ${total}`
+                : total - allHistory.length > 0
+                  ? `+${total - allHistory.length}`
+                  : ''}
+            </button>
+          )}
         </>
       )}
 
