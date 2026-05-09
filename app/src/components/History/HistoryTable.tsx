@@ -1,48 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'framer-motion';
-import {
-  AudioLines,
-  ChevronsDown,
-  Download,
-  FileArchive,
-  FolderDown,
-  Loader2,
-  MoreHorizontal,
-  Play,
-  RotateCcw,
-  Square,
-  Star,
-  Trash2,
-  Wand2,
-} from 'lucide-react';
+import { ChevronsDown, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { EffectsChainEditor } from '@/components/Effects/EffectsChainEditor';
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
 import { apiClient } from '@/lib/api/client';
 import type { EffectConfig, GenerationVersionResponse, HistoryResponse } from '@/lib/api/types';
@@ -58,39 +18,19 @@ import {
   useImportGeneration,
 } from '@/lib/hooks/useHistory';
 import { cn } from '@/lib/utils/cn';
-import { formatDate, formatDuration, formatEngineName } from '@/lib/utils/format';
 import { useGenerationStore } from '@/stores/generationStore';
 import { usePlayerStore } from '@/stores/playerStore';
 
-// ─── Audio Bars ─────────────────────────────────────────────────────────────
-
-function AudioBars({ mode }: { mode: 'idle' | 'generating' | 'playing' }) {
-  const barColor = mode !== 'idle' ? 'bg-accent' : 'bg-muted-foreground/40';
-  return (
-    <div className="flex items-center gap-[2px] h-5">
-      {[0, 1, 2, 3, 4].map((i) => (
-        <motion.div
-          key={`${mode}-${i}`}
-          className={`w-[3px] rounded-full ${barColor}`}
-          animate={
-            mode === 'generating'
-              ? { height: ['6px', '16px', '6px'] }
-              : mode === 'playing'
-                ? { height: ['8px', '14px', '4px', '12px', '8px'] }
-                : { height: '8px' }
-          }
-          transition={
-            mode === 'generating'
-              ? { duration: 0.6, repeat: Infinity, delay: i * 0.08, ease: 'easeInOut' }
-              : mode === 'playing'
-                ? { duration: 1.2, repeat: Infinity, delay: i * 0.15, ease: 'easeInOut' }
-                : { duration: 0.4, ease: 'easeOut' }
-          }
-        />
-      ))}
-    </div>
-  );
-}
+import {
+  ClearFailedDialog,
+  DeleteAllDialog,
+  DeleteDialog,
+  EffectsDialog,
+  ExportAllDialog,
+  ImportDialog,
+} from './HistoryDialogs';
+import { HistoryRow } from './HistoryRow';
+import { HistoryToolbar } from './HistoryToolbar';
 
 // NEW ALTERNATE HISTORY VIEW - FIXED HEIGHT ROWS WITH INFINITE SCROLL
 export function HistoryTable() {
@@ -104,6 +44,8 @@ export function HistoryTable() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Dialog state ────────────────────────────────────────────────────────────
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -112,13 +54,19 @@ export function HistoryTable() {
   );
   const [effectsDialogOpen, setEffectsDialogOpen] = useState(false);
   const [effectsTargetId, setEffectsTargetId] = useState<string | null>(null);
-  const [effectsTargetVersions, setEffectsTargetVersions] = useState<GenerationVersionResponse[]>(
-    [],
-  );
+  const [effectsTargetVersions, setEffectsTargetVersions] = useState<GenerationVersionResponse[]>([]);
   const [effectsSourceVersionId, setEffectsSourceVersionId] = useState<string | null>(null);
   const [effectsChain, setEffectsChain] = useState<EffectConfig[]>([]);
   const [applyingEffects, setApplyingEffects] = useState(false);
   const [expandedVersionsId, setExpandedVersionsId] = useState<string | null>(null);
+  const [clearFailedDialogOpen, setClearFailedDialogOpen] = useState(false);
+  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
+  const [isDeletingAll, setIsDeletingAll] = useState(false);
+  const [exportAllDialogOpen, setExportAllDialogOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<ExportFormat>('wav');
+  const [joinFiles, setJoinFiles] = useState(false);
+
+  // ── Data & mutations ────────────────────────────────────────────────────────
   const limit = 20;
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -127,31 +75,20 @@ export function HistoryTable() {
     data: historyData,
     isLoading,
     isFetching,
-  } = useHistory({
-    limit,
-    offset: page * limit,
-  });
+  } = useHistory({ limit, offset: page * limit });
 
   const deleteGeneration = useDeleteGeneration();
   const clearFailed = useClearFailedGenerations();
-  const [clearFailedDialogOpen, setClearFailedDialogOpen] = useState(false);
-  const [deleteAllDialogOpen, setDeleteAllDialogOpen] = useState(false);
-  const [isDeletingAll, setIsDeletingAll] = useState(false);
   const exportGeneration = useExportGeneration();
   const exportGenerationAudio = useExportGenerationAudio();
   const importGeneration = useImportGeneration();
   const { exportAll, isExporting, progress: exportProgress } = useExportAllAudio();
-  const [exportAllDialogOpen, setExportAllDialogOpen] = useState(false);
-  const [exportFormat, setExportFormat] = useState<ExportFormat>('wav');
-  const [joinFiles, setJoinFiles] = useState(false);
+
   const cancelGeneration = useMutation({
     mutationFn: (generationId: string) => apiClient.cancelGeneration(generationId),
     onSuccess: async (data) => {
       await queryClient.invalidateQueries({ queryKey: ['history'] });
-      toast({
-        title: 'Cancelling generation',
-        description: data.message,
-      });
+      toast({ title: 'Cancelling generation', description: data.message });
     },
     onError: (error) => {
       toast({
@@ -161,6 +98,7 @@ export function HistoryTable() {
       });
     },
   });
+
   const addPendingGeneration = useGenerationStore((state) => state.addPendingGeneration);
   const setAudioWithAutoPlay = usePlayerStore((state) => state.setAudioWithAutoPlay);
   const restartCurrentAudio = usePlayerStore((state) => state.restartCurrentAudio);
@@ -169,15 +107,14 @@ export function HistoryTable() {
   const audioUrl = usePlayerStore((state) => state.audioUrl);
   const isPlayerVisible = !!audioUrl;
 
-  // Update accumulated history when new data arrives
+  // ── Pagination / data accumulation ─────────────────────────────────────────
+
   useEffect(() => {
     if (historyData?.items) {
       setTotal(historyData.total);
       if (page === 0) {
-        // Reset to first page
         setAllHistory(historyData.items);
       } else {
-        // Append new items, avoiding duplicates
         setAllHistory((prev) => {
           const existingIds = new Set(prev.map((item) => item.id));
           const newItems = historyData.items.filter((item) => !existingIds.has(item.id));
@@ -194,7 +131,6 @@ export function HistoryTable() {
     if (historyData && allHistory.length < historyData.total) {
       setPage((prev) => prev + 1);
     } else {
-      // All pages loaded — scroll to bottom and clean up
       loadAllRef.current = false;
       setIsLoadingAll(false);
       requestAnimationFrame(() => {
@@ -207,15 +143,15 @@ export function HistoryTable() {
     if (isLoadingAll) return;
     loadAllRef.current = true;
     setIsLoadingAll(true);
-    // Kick off the first extra page if we're not already fetching
     if (!isFetching && allHistory.length < total) {
       setPage((prev) => prev + 1);
     }
   }, [isLoadingAll, isFetching, allHistory.length, total]);
 
-  // Reset to page 0 when deletions, imports, or generation completions occur
+  // Reset to page 0 when deletions / imports / generation completions occur
   const pendingCount = useGenerationStore((state) => state.pendingGenerationIds.size);
   const prevPendingCountRef = useRef(pendingCount);
+
   useEffect(() => {
     if (deleteGeneration.isSuccess || importGeneration.isSuccess || clearFailed.isSuccess) {
       setPage(0);
@@ -224,12 +160,7 @@ export function HistoryTable() {
   }, [deleteGeneration.isSuccess, importGeneration.isSuccess, clearFailed.isSuccess]);
 
   useEffect(() => {
-    // A generation finished (pending count decreased) — scroll back to show it
-    if (
-      prevPendingCountRef.current > 0 &&
-      pendingCount < prevPendingCountRef.current &&
-      page !== 0
-    ) {
+    if (prevPendingCountRef.current > 0 && pendingCount < prevPendingCountRef.current && page !== 0) {
       setPage(0);
       setAllHistory([]);
     }
@@ -240,7 +171,6 @@ export function HistoryTable() {
   useEffect(() => {
     const loadMoreEl = loadMoreRef.current;
     if (!loadMoreEl) return;
-
     const observer = new IntersectionObserver(
       (entries) => {
         const target = entries[0];
@@ -248,13 +178,8 @@ export function HistoryTable() {
           setPage((prev) => prev + 1);
         }
       },
-      {
-        root: scrollRef.current,
-        rootMargin: '100px',
-        threshold: 0.1,
-      },
+      { root: scrollRef.current, rootMargin: '100px', threshold: 0.1 },
     );
-
     observer.observe(loadMoreEl);
     return () => observer.disconnect();
   }, [isFetching, allHistory.length, total]);
@@ -263,23 +188,19 @@ export function HistoryTable() {
   useEffect(() => {
     const scrollEl = scrollRef.current;
     if (!scrollEl) return;
-
-    const handleScroll = () => {
-      setIsScrolled(scrollEl.scrollTop > 0);
-    };
-
+    const handleScroll = () => setIsScrolled(scrollEl.scrollTop > 0);
     scrollEl.addEventListener('scroll', handleScroll);
     return () => scrollEl.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // ── Action handlers ─────────────────────────────────────────────────────────
+
   const handlePlay = (audioId: string, text: string, profileId: string) => {
-    // If clicking the same audio, restart it from the beginning
     if (currentAudioId === audioId) {
       restartCurrentAudio();
     } else {
-      // Otherwise, load the new audio and auto-play it
-      const audioUrl = apiClient.getAudioUrl(audioId);
-      setAudioWithAutoPlay(audioUrl, audioId, profileId, text.substring(0, 50));
+      const url = apiClient.getAudioUrl(audioId);
+      setAudioWithAutoPlay(url, audioId, profileId, text.substring(0, 50));
     }
   };
 
@@ -287,13 +208,8 @@ export function HistoryTable() {
     exportGenerationAudio.mutate(
       { generationId, text },
       {
-        onError: (error) => {
-          toast({
-            title: 'Failed to download audio',
-            description: error.message,
-            variant: 'destructive',
-          });
-        },
+        onError: (error) =>
+          toast({ title: 'Failed to download audio', description: error.message, variant: 'destructive' }),
       },
     );
   };
@@ -302,13 +218,8 @@ export function HistoryTable() {
     exportGeneration.mutate(
       { generationId, text },
       {
-        onError: (error) => {
-          toast({
-            title: 'Failed to export generation',
-            description: error.message,
-            variant: 'destructive',
-          });
-        },
+        onError: (error) =>
+          toast({ title: 'Failed to export generation', description: error.message, variant: 'destructive' }),
       },
     );
   };
@@ -347,7 +258,6 @@ export function HistoryTable() {
       setDeleteAllDialogOpen(false);
     }
   };
-
 
   const handleRetry = async (generationId: string) => {
     try {
@@ -395,7 +305,6 @@ export function HistoryTable() {
     const versions = gen?.versions ?? [];
     setEffectsTargetId(generationId);
     setEffectsTargetVersions(versions);
-    // Default to clean/original version (no effects chain)
     const cleanVersion = versions.find((v) => !v.effects_chain || v.effects_chain.length === 0);
     setEffectsSourceVersionId(cleanVersion?.id ?? null);
     setEffectsChain([]);
@@ -412,21 +321,13 @@ export function HistoryTable() {
         set_as_default: true,
       });
       queryClient.invalidateQueries({ queryKey: ['history'] });
-
-      // If the player is currently on this generation, reload with the new version audio
       if (currentAudioId === effectsTargetId) {
         const gen = allHistory.find((g) => g.id === effectsTargetId);
         if (gen) {
           const versionUrl = apiClient.getVersionAudioUrl(newVersion.id);
-          setAudioWithAutoPlay(
-            versionUrl,
-            effectsTargetId,
-            gen.profile_id,
-            gen.text.substring(0, 50),
-          );
+          setAudioWithAutoPlay(versionUrl, effectsTargetId, gen.profile_id, gen.text.substring(0, 50));
         }
       }
-
       setEffectsDialogOpen(false);
       toast({ title: 'Effects applied', description: 'A new version has been created.' });
     } catch (error) {
@@ -453,14 +354,9 @@ export function HistoryTable() {
     }
   };
 
-  const handlePlayVersion = (
-    generationId: string,
-    versionId: string,
-    text: string,
-    profileId: string,
-  ) => {
-    const audioUrl = apiClient.getVersionAudioUrl(versionId);
-    setAudioWithAutoPlay(audioUrl, generationId, profileId, text.substring(0, 50));
+  const handlePlayVersion = (generationId: string, versionId: string, text: string, profileId: string) => {
+    const url = apiClient.getVersionAudioUrl(versionId);
+    setAudioWithAutoPlay(url, generationId, profileId, text.substring(0, 50));
   };
 
   const handleImportConfirm = () => {
@@ -469,41 +365,14 @@ export function HistoryTable() {
         onSuccess: (data) => {
           setImportDialogOpen(false);
           setSelectedFile(null);
-          if (fileInputRef.current) {
-            fileInputRef.current.value = '';
-          }
-          toast({
-            title: 'Generation imported',
-            description: data.message || 'Generation imported successfully',
-          });
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          toast({ title: 'Generation imported', description: data.message || 'Generation imported successfully' });
         },
-        onError: (error) => {
-          toast({
-            title: 'Failed to import generation',
-            description: error.message,
-            variant: 'destructive',
-          });
-        },
+        onError: (error) =>
+          toast({ title: 'Failed to import generation', description: error.message, variant: 'destructive' }),
       });
     }
   };
-
-  if (isLoading && page === 0) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  const history = allHistory;
-  const hasMore = allHistory.length < total;
-  const failedCount = history.filter((g) => g.status === 'failed').length;
-
-  // Completed (non-failed, non-generating) items available for batch export
-  const exportableItems = history.filter(
-    (g) => g.status !== 'failed' && g.status !== 'loading_model' && g.status !== 'generating',
-  );
 
   const handleExportAllConfirm = () => {
     setExportAllDialogOpen(false);
@@ -519,13 +388,8 @@ export function HistoryTable() {
             : `${count} file${count === 1 ? '' : 's'} saved as .${exportFormat}.`,
         });
       },
-      (err, index) => {
-        toast({
-          title: `Export failed at file ${index + 1}`,
-          description: err.message,
-          variant: 'destructive',
-        });
-      },
+      (err, index) =>
+        toast({ title: `Export failed at file ${index + 1}`, description: err.message, variant: 'destructive' }),
     );
   };
 
@@ -549,6 +413,25 @@ export function HistoryTable() {
     });
   };
 
+  // ── Derived values ──────────────────────────────────────────────────────────
+
+  if (isLoading && page === 0) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  const history = allHistory;
+  const hasMore = allHistory.length < total;
+  const failedCount = history.filter((g) => g.status === 'failed').length;
+  const exportableItems = history.filter(
+    (g) => g.status !== 'failed' && g.status !== 'loading_model' && g.status !== 'generating',
+  );
+
+  // ── Render ──────────────────────────────────────────────────────────────────
+
   return (
     <div className="flex flex-col h-full min-h-0 relative">
       {history.length === 0 ? (
@@ -557,51 +440,20 @@ export function HistoryTable() {
         </div>
       ) : (
         <>
-          {/* Toolbar: Export All + Clear Failed */}
-          {(exportableItems.length > 0 || failedCount > 0) && (
-            <div className="flex items-center justify-between px-1 pb-2">
-              <div className="flex items-center gap-1">
-                {exportableItems.length > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 text-xs text-muted-foreground hover:text-foreground"
-                    onClick={() => setExportAllDialogOpen(true)}
-                    disabled={isExporting}
-                  >
-                    {isExporting ? (
-                      <>
-                        <Loader2 className="h-3 w-3 mr-1.5 animate-spin" />
-                        {exportProgress
-                          ? `Exporting ${exportProgress.current}/${exportProgress.total}…`
-                          : 'Exporting…'}
-                      </>
-                    ) : (
-                      <>
-                        <FolderDown className="h-3 w-3 mr-1.5" />
-                        Export All ({exportableItems.length})
-                      </>
-                    )}
-                  </Button>
-                )}
-              </div>
-              {failedCount > 0 && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 text-xs text-muted-foreground hover:text-destructive"
-                  onClick={() => setClearFailedDialogOpen(true)}
-                  disabled={clearFailed.isPending}
-                >
-                  <Trash2 className="h-3 w-3 mr-1.5" />
-                  {clearFailed.isPending ? 'Clearing...' : 'Clear failed'}
-                </Button>
-              )}
-            </div>
-          )}
+          <HistoryToolbar
+            exportableCount={exportableItems.length}
+            failedCount={failedCount}
+            isExporting={isExporting}
+            exportProgress={exportProgress}
+            isClearFailedPending={clearFailed.isPending}
+            onExportAll={() => setExportAllDialogOpen(true)}
+            onClearFailed={() => setClearFailedDialogOpen(true)}
+          />
+
           {isScrolled && (
             <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-background to-transparent z-10 pointer-events-none" />
           )}
+
           <div
             ref={scrollRef}
             className={cn(
@@ -609,306 +461,34 @@ export function HistoryTable() {
               isPlayerVisible && BOTTOM_SAFE_AREA_PADDING,
             )}
           >
-            {history.map((gen) => {
-              const isCurrentlyPlaying = currentAudioId === gen.id && isPlaying;
-              const isInProgress = gen.status === 'loading_model' || gen.status === 'generating';
-              const isGenerating = isInProgress;
-              const isFailed = gen.status === 'failed';
-              const isPlayable = !isGenerating && !isFailed;
-              const hasVersions = gen.versions && gen.versions.length > 1;
-              const isVersionsExpanded = expandedVersionsId === gen.id;
-              const isCancelling =
-                cancelGeneration.isPending && cancelGeneration.variables === gen.id;
-              return (
-                <div
-                  key={gen.id}
-                  className={cn(
-                    'border rounded-md bg-card transition-colors text-left w-full',
-                    isCurrentlyPlaying && 'bg-muted/70',
-                  )}
-                >
-                  {/* Main row */}
-                  <div
-                    role={isPlayable ? 'button' : undefined}
-                    tabIndex={isPlayable ? 0 : undefined}
-                    className={cn(
-                      'flex items-stretch gap-4 h-26 p-3 outline-none',
-                      isPlayable && 'hover:bg-muted/70 cursor-pointer rounded-md',
-                      isVersionsExpanded && 'rounded-b-none',
-                    )}
-                    aria-label={
-                      isGenerating
-                        ? `Generating speech for ${gen.profile_name}...`
-                        : isFailed
-                          ? `Generation failed for ${gen.profile_name}`
-                          : isCurrentlyPlaying
-                            ? `Sample from ${gen.profile_name}, ${formatDuration(gen.duration ?? 0)}, ${formatDate(gen.created_at)}. Playing. Press Enter to restart.`
-                            : `Sample from ${gen.profile_name}, ${formatDuration(gen.duration ?? 0)}, ${formatDate(gen.created_at)}. Press Enter to play.`
-                    }
-                    onMouseDown={(e) => {
-                      if (!isPlayable) return;
-                      const target = e.target as HTMLElement;
-                      if (target.closest('textarea') || window.getSelection()?.toString()) {
-                        return;
-                      }
-                      handlePlay(gen.id, gen.text, gen.profile_id);
-                    }}
-                    onKeyDown={(e) => {
-                      if (!isPlayable) return;
-                      const target = e.target as HTMLElement;
-                      if (target.closest('textarea') || target.closest('button')) return;
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handlePlay(gen.id, gen.text, gen.profile_id);
-                      }
-                    }}
-                  >
-                    {/* Status icon */}
-                    <div className="flex items-center shrink-0 w-10 justify-center overflow-hidden">
-                      <AudioBars
-                        mode={isGenerating ? 'generating' : isCurrentlyPlaying ? 'playing' : 'idle'}
-                      />
-                    </div>
-
-                    {/* Left side - Meta information */}
-                    <div className="flex flex-col gap-1.5 w-48 shrink-0 justify-center">
-                      <div className="font-medium text-sm truncate" title={gen.profile_name}>
-                        {gen.profile_name}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">{gen.language}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {formatEngineName(gen.engine, gen.model_size)}
-                        </span>
-                        {isFailed ? (
-                          <span className="text-xs text-destructive">Failed</span>
-                        ) : !isGenerating ? (
-                          <span className="text-xs text-muted-foreground">
-                            {formatDuration(gen.duration ?? 0)}
-                          </span>
-                        ) : null}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {isInProgress ? (
-                          <span className="text-accent">
-                            {gen.status === 'loading_model' ? 'Loading model...' : 'Generating...'}
-                          </span>
-                        ) : (
-                          formatDate(gen.created_at)
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Right side - Transcript textarea */}
-                    <div className="flex-1 min-w-0 flex">
-                      <Textarea
-                        value={gen.text}
-                        className="flex-1 resize-none text-sm text-muted-foreground select-text"
-                        readOnly
-                        aria-label={`Transcript for sample from ${gen.profile_name}, ${formatDuration(gen.duration ?? 0)}`}
-                      />
-                    </div>
-
-                    {/* Far right - Actions */}
-                    <div
-                      className="shrink-0 flex flex-col justify-center items-center gap-0.5"
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                          'h-6 w-6 text-muted-foreground/50 hover:bg-muted-foreground/20 hover:text-muted-foreground',
-                          gen.is_favorited && 'text-accent hover:text-accent',
-                        )}
-                        aria-label={gen.is_favorited ? 'Unfavorite' : 'Favorite'}
-                        onClick={() => handleToggleFavorite(gen.id)}
-                      >
-                        <Star
-                          className="h-2 w-2"
-                          fill={gen.is_favorited ? 'currentColor' : 'none'}
-                        />
-                      </Button>
-                      {hasVersions && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className={cn(
-                            'h-6 w-6 text-muted-foreground/50 hover:bg-muted-foreground/20 hover:text-muted-foreground',
-                            isVersionsExpanded && 'text-accent hover:text-accent',
-                          )}
-                          aria-label="Toggle versions"
-                          onClick={() => setExpandedVersionsId(isVersionsExpanded ? null : gen.id)}
-                        >
-                          <AudioLines className="h-2 w-2" />
-                        </Button>
-                      )}
-
-                      {isFailed ? (
-                        <>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground/50 hover:bg-muted-foreground/20 hover:text-muted-foreground"
-                            aria-label="Retry generation"
-                            onClick={() => handleRetry(gen.id)}
-                          >
-                            <RotateCcw className="h-2 w-2" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-6 w-6 text-muted-foreground/50 hover:bg-muted-foreground/20 hover:text-muted-foreground"
-                            aria-label="Delete generation"
-                            disabled={deleteGeneration.isPending}
-                            onClick={() => handleDeleteClick(gen.id, gen.profile_name)}
-                          >
-                            <Trash2 className="h-2 w-2" />
-                          </Button>
-                        </>
-                      ) : isGenerating ? (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-muted-foreground/50 hover:bg-muted-foreground/20 hover:text-muted-foreground"
-                          aria-label="Cancel generation"
-                          disabled={isCancelling}
-                          onClick={() => cancelGeneration.mutate(gen.id)}
-                        >
-                          {isCancelling ? (
-                            <Loader2 className="h-2 w-2 animate-spin" />
-                          ) : (
-                            <Square className="h-2 w-2" />
-                          )}
-                        </Button>
-                      ) : (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              className="h-6 w-6 text-muted-foreground/50 hover:bg-muted-foreground/20 hover:text-muted-foreground"
-                              aria-label={t('history.actions.menu')}
-                              disabled={isGenerating}
-                            >
-                              <MoreHorizontal className="h-2 w-2" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem
-                              onClick={() => handlePlay(gen.id, gen.text, gen.profile_id)}
-                            >
-                              <Play className="mr-2 h-4 w-4" />
-                              {t('history.actions.play')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleDownloadAudio(gen.id, gen.text)}
-                              disabled={exportGenerationAudio.isPending}
-                            >
-                              <Download className="mr-2 h-4 w-4" />
-                              {t('history.actions.exportAudio')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleExportPackage(gen.id, gen.text)}
-                              disabled={exportGeneration.isPending}
-                            >
-                              <FileArchive className="mr-2 h-4 w-4" />
-                              {t('history.actions.exportPackage')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleApplyEffects(gen.id)}>
-                              <Wand2 className="mr-2 h-4 w-4" />
-                              {t('history.actions.applyEffects')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem onClick={() => handleRegenerate(gen.id)}>
-                              <RotateCcw className="mr-2 h-4 w-4" />
-                              {t('history.actions.regenerate')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              onClick={() => handleDeleteClick(gen.id, gen.profile_name)}
-                              disabled={deleteGeneration.isPending}
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              {t('common.delete')}
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              onClick={() => setDeleteAllDialogOpen(true)}
-                              disabled={deleteGeneration.isPending || isDeletingAll}
-                              className="text-destructive focus:text-destructive"
-                            >
-                              <Trash2 className="mr-2 h-4 w-4" />
-                              {t('history.actions.deleteAll')}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Expandable versions panel */}
-                  <AnimatePresence>
-                    {isVersionsExpanded && gen.versions && (
-                      <motion.div
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: 'auto', opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        transition={{ duration: 0.2, ease: 'easeOut' }}
-                        className="overflow-hidden"
-                      >
-                        <div className="border-t border-border/50">
-                          <div className="divide-y divide-border/40">
-                            {gen.versions.map((v) => {
-                              // Show source provenance when effects were applied to a non-clean version
-                              const sourceVersion = v.source_version_id
-                                ? gen.versions?.find((sv) => sv.id === v.source_version_id)
-                                : null;
-                              const showSource =
-                                sourceVersion &&
-                                sourceVersion.effects_chain &&
-                                sourceVersion.effects_chain.length > 0;
-
-                              return (
-                                <button
-                                  key={v.id}
-                                  type="button"
-                                  className="flex items-center gap-2 w-full h-9 px-3 text-left hover:bg-muted/50 transition-colors"
-                                  onClick={() => {
-                                    handlePlayVersion(gen.id, v.id, gen.text, gen.profile_id);
-                                    if (!v.is_default) {
-                                      handleSwitchVersion(gen.id, v.id);
-                                    }
-                                  }}
-                                >
-                                  <AudioLines className="h-3 w-3 shrink-0 text-muted-foreground" />
-                                  <span className="truncate text-xs font-medium">{v.label}</span>
-                                  {v.effects_chain && v.effects_chain.length > 0 && (
-                                    <span className="text-[10px] text-muted-foreground truncate">
-                                      {v.effects_chain.map((e) => e.type).join(' → ')}
-                                    </span>
-                                  )}
-                                  {showSource && (
-                                    <span className="text-[10px] text-muted-foreground/60 truncate">
-                                      from {sourceVersion.label}
-                                    </span>
-                                  )}
-                                  <span className="flex-1" />
-                                  {v.is_default && (
-                                    <span className="text-[10px] bg-accent/15 text-accent px-1.5 py-0.5 rounded-full">
-                                      active
-                                    </span>
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
+            {history.map((gen) => (
+              <HistoryRow
+                key={gen.id}
+                gen={gen}
+                isCurrentlyPlaying={currentAudioId === gen.id && isPlaying}
+                isCancelling={cancelGeneration.isPending && cancelGeneration.variables === gen.id}
+                isVersionsExpanded={expandedVersionsId === gen.id}
+                isDeletePending={deleteGeneration.isPending}
+                isExportAudioPending={exportGenerationAudio.isPending}
+                isExportPackagePending={exportGeneration.isPending}
+                isDeletingAll={isDeletingAll}
+                onPlay={handlePlay}
+                onDownloadAudio={handleDownloadAudio}
+                onExportPackage={handleExportPackage}
+                onDeleteClick={handleDeleteClick}
+                onDeleteAll={() => setDeleteAllDialogOpen(true)}
+                onRetry={handleRetry}
+                onRegenerate={handleRegenerate}
+                onToggleFavorite={handleToggleFavorite}
+                onApplyEffects={handleApplyEffects}
+                onCancelGeneration={(id) => cancelGeneration.mutate(id)}
+                onToggleVersions={(id) =>
+                  setExpandedVersionsId(expandedVersionsId === id ? null : id)
+                }
+                onPlayVersion={handlePlayVersion}
+                onSwitchVersion={handleSwitchVersion}
+              />
+            ))}
 
             {/* Load more trigger element */}
             {hasMore && (
@@ -950,258 +530,71 @@ export function HistoryTable() {
         </>
       )}
 
-      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('history.deleteDialog.title')}</DialogTitle>
-            <DialogDescription>
-              {t('history.deleteDialog.body', { name: generationToDelete?.name })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDeleteDialogOpen(false);
-                setGenerationToDelete(null);
-              }}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteConfirm}
-              disabled={deleteGeneration.isPending}
-            >
-              {deleteGeneration.isPending ? t('history.deleteDialog.deleting') : t('common.delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* ── Dialogs ── */}
+      <DeleteDialog
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        generationName={generationToDelete?.name}
+        isDeleting={deleteGeneration.isPending}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => {
+          setDeleteDialogOpen(false);
+          setGenerationToDelete(null);
+        }}
+      />
 
-      <Dialog open={deleteAllDialogOpen} onOpenChange={setDeleteAllDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('history.deleteAllDialog.title')}</DialogTitle>
-            <DialogDescription>
-              {t('history.deleteAllDialog.body', { count: allHistory.length })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteAllDialogOpen(false)}
-              disabled={isDeletingAll}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteAll}
-              disabled={isDeletingAll}
-            >
-              {isDeletingAll ? t('history.deleteAllDialog.deleting') : t('history.deleteAllDialog.confirm')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <DeleteAllDialog
+        open={deleteAllDialogOpen}
+        onOpenChange={setDeleteAllDialogOpen}
+        count={allHistory.length}
+        isDeleting={isDeletingAll}
+        onConfirm={handleDeleteAll}
+      />
 
-      <Dialog open={clearFailedDialogOpen} onOpenChange={setClearFailedDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('history.clearFailedDialog.title')}</DialogTitle>
-            <DialogDescription>
-              {t('history.clearFailedDialog.body', { count: failedCount })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setClearFailedDialogOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleClearFailedConfirm}
-              disabled={clearFailed.isPending}
-            >
-              {clearFailed.isPending
-                ? t('history.clearFailedDialog.clearing')
-                : t('history.clearFailedDialog.clearAll')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ClearFailedDialog
+        open={clearFailedDialogOpen}
+        onOpenChange={setClearFailedDialogOpen}
+        failedCount={failedCount}
+        isClearing={clearFailed.isPending}
+        onConfirm={handleClearFailedConfirm}
+      />
 
-      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('history.importDialog.title')}</DialogTitle>
-            <DialogDescription>
-              {t('history.importDialog.body', { name: selectedFile?.name })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setImportDialogOpen(false);
-                setSelectedFile(null);
-                if (fileInputRef.current) {
-                  fileInputRef.current.value = '';
-                }
-              }}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onClick={handleImportConfirm}
-              disabled={importGeneration.isPending || !selectedFile}
-            >
-              {importGeneration.isPending
-                ? t('history.importDialog.importing')
-                : t('history.importDialog.action')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ImportDialog
+        open={importDialogOpen}
+        onOpenChange={setImportDialogOpen}
+        selectedFileName={selectedFile?.name}
+        isImporting={importGeneration.isPending}
+        hasFile={!!selectedFile}
+        onConfirm={handleImportConfirm}
+        onCancel={() => {
+          setImportDialogOpen(false);
+          setSelectedFile(null);
+          if (fileInputRef.current) fileInputRef.current.value = '';
+        }}
+      />
 
-      {/* Export All confirmation dialog */}
-      <Dialog open={exportAllDialogOpen} onOpenChange={setExportAllDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Export All Audio</DialogTitle>
-            <DialogDescription>
-              {joinFiles
-                ? `${exportableItems.length} file${exportableItems.length === 1 ? '' : 's'} will be merged into a single .${exportFormat} file you save to disk.`
-                : `${exportableItems.length} audio file${exportableItems.length === 1 ? '' : 's'} will be exported as numbered files (01, 02, …) to a folder you choose.`}{' '}
-              In-progress and failed items are skipped.
-            </DialogDescription>
-          </DialogHeader>
+      <ExportAllDialog
+        open={exportAllDialogOpen}
+        onOpenChange={setExportAllDialogOpen}
+        exportableCount={exportableItems.length}
+        exportFormat={exportFormat}
+        joinFiles={joinFiles}
+        onFormatChange={setExportFormat}
+        onJoinToggle={() => setJoinFiles((v) => !v)}
+        onConfirm={handleExportAllConfirm}
+      />
 
-          {/* Format selector */}
-          <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-muted-foreground">Output format</span>
-            <div className="flex gap-2">
-              {(['wav', 'mp3'] as ExportFormat[]).map((fmt) => (
-                <button
-                  key={fmt}
-                  type="button"
-                  onClick={() => setExportFormat(fmt)}
-                  className={[
-                    'flex-1 rounded-md border py-1.5 text-xs font-medium transition-colors',
-                    exportFormat === fmt
-                      ? 'border-accent bg-accent/10 text-accent'
-                      : 'border-border text-muted-foreground hover:border-accent/50 hover:text-foreground',
-                  ].join(' ')}
-                >
-                  .{fmt.toUpperCase()}
-                </button>
-              ))}
-            </div>
-            {exportFormat === 'mp3' && (
-              <p className="text-[11px] text-muted-foreground">
-                Files will be encoded at 128 kbps. Encoding happens locally — no data leaves your
-                device.
-              </p>
-            )}
-          </div>
-
-          {/* Join toggle */}
-          <button
-            type="button"
-            onClick={() => setJoinFiles((v) => !v)}
-            className="flex items-center gap-2.5 w-full rounded-md border px-3 py-2.5 text-left transition-colors hover:border-accent/50"
-          >
-            {/* custom checkbox */}
-            <span
-              className={[
-                'flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors',
-                joinFiles ? 'border-accent bg-accent' : 'border-muted-foreground/40',
-              ].join(' ')}
-            >
-              {joinFiles && (
-                <svg viewBox="0 0 10 8" fill="none" className="h-2.5 w-2.5">
-                  <path
-                    d="M1 4l2.5 2.5L9 1"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    className="text-accent-foreground"
-                  />
-                </svg>
-              )}
-            </span>
-            <span className="flex flex-col gap-0.5">
-              <span className="text-xs font-medium">Join into a single file</span>
-              <span className="text-[11px] text-muted-foreground">
-                Concatenates all clips in order into one {exportFormat.toUpperCase()}
-              </span>
-            </span>
-          </button>
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setExportAllDialogOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button onClick={handleExportAllConfirm}>
-              <FolderDown className="mr-2 h-4 w-4" />
-              {joinFiles ? 'Choose file & export' : 'Choose folder & export'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={effectsDialogOpen} onOpenChange={setEffectsDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('history.effectsDialog.title')}</DialogTitle>
-            <DialogDescription>{t('history.effectsDialog.body')}</DialogDescription>
-          </DialogHeader>
-          {effectsTargetVersions.length > 1 && (
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">
-                {t('history.effectsDialog.sourceLabel')}
-              </label>
-              <Select
-                value={effectsSourceVersionId ?? ''}
-                onValueChange={(val) => setEffectsSourceVersionId(val || null)}
-              >
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder={t('history.effectsDialog.sourcePlaceholder')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {effectsTargetVersions.map((v) => (
-                    <SelectItem key={v.id} value={v.id} className="text-xs">
-                      {v.label}
-                      {v.effects_chain && v.effects_chain.length > 0 && (
-                        <span className="text-muted-foreground ml-1.5">
-                          ({v.effects_chain.map((e) => e.type).join(' + ')})
-                        </span>
-                      )}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-          <div className="py-2 max-h-80 overflow-y-auto">
-            <EffectsChainEditor value={effectsChain} onChange={setEffectsChain} />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEffectsDialogOpen(false)}>
-              {t('common.cancel')}
-            </Button>
-            <Button
-              onClick={handleApplyEffectsConfirm}
-              disabled={applyingEffects || effectsChain.length === 0}
-            >
-              {applyingEffects
-                ? t('history.effectsDialog.applying')
-                : t('history.effectsDialog.apply')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <EffectsDialog
+        open={effectsDialogOpen}
+        onOpenChange={setEffectsDialogOpen}
+        versions={effectsTargetVersions}
+        sourceVersionId={effectsSourceVersionId}
+        effectsChain={effectsChain}
+        isApplying={applyingEffects}
+        onSourceVersionChange={setEffectsSourceVersionId}
+        onEffectsChainChange={setEffectsChain}
+        onConfirm={handleApplyEffectsConfirm}
+      />
     </div>
   );
 }
