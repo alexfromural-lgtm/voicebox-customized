@@ -206,9 +206,10 @@ async function joinExportMp3(
   // Each element is one clip's worth of compressed MP3 frames (~16 KB/s).
   // For 170 × 30 s clips this totals ~82 MB — tiny compared to raw PCM.
   const mp3Parts: Uint8Array[] = [];
+  const reversed = [...items].reverse();
 
-  for (let i = 0; i < items.length; i++) {
-    const blob = await apiClient.exportGenerationAudio(items[i].id);
+  for (let i = 0; i < reversed.length; i++) {
+    const blob = await apiClient.exportGenerationAudio(reversed[i].id);
     let audioBuf = await decodeBlob(blob);
 
     if (targetRate === null) targetRate = audioBuf.sampleRate;
@@ -221,7 +222,7 @@ async function joinExportMp3(
     const mp3Bytes = await encodePcmToMp3(left, right, audioBuf.sampleRate);
     mp3Parts.push(mp3Bytes);
 
-    onProgress?.(i + 1, items.length);
+    onProgress?.(i + 1, reversed.length);
   }
 
   if (!mp3Parts.length) return;
@@ -257,9 +258,10 @@ async function joinExportWav(
   const rightChunks: Float32Array[] = [];
   let hasStereo = false;
   let totalLen = 0;
+  const reversed = [...items].reverse();
 
-  for (let i = 0; i < items.length; i++) {
-    const blob = await apiClient.exportGenerationAudio(items[i].id);
+  for (let i = 0; i < reversed.length; i++) {
+    const blob = await apiClient.exportGenerationAudio(reversed[i].id);
     let audioBuf = await decodeBlob(blob);
 
     if (targetRate === null) targetRate = audioBuf.sampleRate;
@@ -274,7 +276,7 @@ async function joinExportWav(
     if (rightSlice) hasStereo = true;
     totalLen += leftSlice.length;
 
-    onProgress?.(i + 1, items.length);
+    onProgress?.(i + 1, reversed.length);
   }
 
   if (targetRate === null) return;
