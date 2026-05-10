@@ -336,7 +336,8 @@ class F5TTSRuBackend:
                 # right at a voiced frame.  This prevents the model's attention
                 # from "bleeding" the reference tail into the first generated
                 # frames, which is the source of the leading noise artifact.
-                silence_pad = int(0.30 * sr)  # 300 ms of zeros at native sr
+                
+                silence_pad = int(0.20 * sr)  # 300 ms of zeros at native sr
                 audio_data = np.concatenate(
                     [audio_data, np.zeros(silence_pad, dtype=audio_data.dtype)]
                 )
