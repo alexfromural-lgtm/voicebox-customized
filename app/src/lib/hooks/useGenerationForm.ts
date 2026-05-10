@@ -8,6 +8,7 @@ import type { EffectConfig } from '@/lib/api/types';
 import { LANGUAGE_CODES, type LanguageCode } from '@/lib/constants/languages';
 import { useGeneration } from '@/lib/hooks/useGeneration';
 import { useModelDownloadToast } from '@/lib/hooks/useModelDownloadToast';
+import { replaceNumbersWithWords } from '@/lib/utils/numToWords';
 import { useGenerationStore } from '@/stores/generationStore';
 import { useServerStore } from '@/stores/serverStore';
 import { useUIStore } from '@/stores/uiStore';
@@ -160,9 +161,11 @@ export function useGenerationForm(options: UseGenerationFormOptions = {}) {
       const supportsInstruct = engine === 'qwen_custom_voice';
       const effectsChain = options.getEffectsChain?.();
       // This now returns immediately with status="generating"
+      // Pre-process: expand numeric tokens to spoken words (e.g. 495 → "four hundred ninety-five")
+      const processedText = replaceNumbersWithWords(data.text, data.language);
       const result = await generation.mutateAsync({
         profile_id: selectedProfileId,
-        text: data.text,
+        text: processedText,
         language: data.language,
         seed: data.seed,
         model_size: hasModelSizes ? data.modelSize : undefined,
