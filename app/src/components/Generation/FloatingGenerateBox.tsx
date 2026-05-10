@@ -267,17 +267,26 @@ export function FloatingGenerateBox({
 
   /**
    * Split text into chunks of at most maxChars characters,
-   * preferring to break at whitespace so words are not cut in half.
+   * preferring to break at sentence boundaries (last ".") so whole sentences
+   * are never interrupted. Falls back to the last whitespace if no period is
+   * found within the limit, and hard-cuts only as a last resort.
    */
   function splitTextIntoChunks(text: string, maxChars: number): string[] {
     const chunks: string[] = [];
     let remaining = text;
     while (remaining.length > maxChars) {
-      // Try to find the last whitespace within the limit
-      let splitAt = remaining.lastIndexOf(' ', maxChars);
-      if (splitAt <= 0) {
-        // No whitespace found — hard-cut at the limit
-        splitAt = maxChars;
+      // 1. Try to find the last period within the limit (keep the period in the chunk)
+      let splitAt = remaining.lastIndexOf('.', maxChars - 1);
+      if (splitAt > 0) {
+        // Include the period in the current chunk
+        splitAt = splitAt + 1;
+      } else {
+        // 2. No period found — fall back to the last whitespace
+        splitAt = remaining.lastIndexOf(' ', maxChars);
+        if (splitAt <= 0) {
+          // 3. No whitespace either — hard-cut at the limit
+          splitAt = maxChars;
+        }
       }
       chunks.push(remaining.slice(0, splitAt).trim());
       remaining = remaining.slice(splitAt).trim();
