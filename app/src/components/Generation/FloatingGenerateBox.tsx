@@ -275,13 +275,19 @@ export function FloatingGenerateBox({
     const chunks: string[] = [];
     let remaining = text;
     while (remaining.length > maxChars) {
-      // 1. Try to find the last period within the limit (keep the period in the chunk)
-      let splitAt = remaining.lastIndexOf('.', maxChars - 1);
-      if (splitAt > 0) {
-        // Include the period in the current chunk
-        splitAt = splitAt + 1;
-      } else {
-        // 2. No period found — fall back to the last whitespace
+      // 1. Try to find the last period within the limit, but only if it falls
+      //    in the latter half of the window. This prevents a short opening
+      //    paragraph (e.g. 200 chars ending with ".") from becoming its own
+      //    tiny chunk when followed by a long paragraph with no early period,
+      //    which would force 3+ splits on text that should only need 2.
+      const periodPos = remaining.lastIndexOf('.', maxChars - 1);
+      let splitAt = -1;
+      if (periodPos > maxChars / 2) {
+        // Period is close enough to the limit — include it in the chunk
+        splitAt = periodPos + 1;
+      }
+      if (splitAt <= 0) {
+        // 2. No suitable period — fall back to the last whitespace
         splitAt = remaining.lastIndexOf(' ', maxChars);
         if (splitAt <= 0) {
           // 3. No whitespace either — hard-cut at the limit
