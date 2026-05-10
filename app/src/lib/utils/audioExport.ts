@@ -5,7 +5,7 @@
  *  - PCM decoding / resampling
  *  - WAV encoding
  *  - MP3 encoding (via @breezystack/lamejs)
- *  - joinExport  — concatenate all clips → single file via save dialog
+ *  - joinExport  — concatenate clips in groups of 200 → numbered files via save dialog
  *  - splitExport — write one numbered file per clip into a chosen folder
  */
 
@@ -175,16 +175,52 @@ export async function encodeWavBlobToMp3(wavBlob: Blob): Promise<Uint8Array> {
  * @param saveFile    Platform save-file function (from usePlatform).
  * @param onProgress  Called after each blob is fetched.
  */
+/** Maximum number of history items bundled into a single joined file. */
+const JOIN_GROUP_SIZE = 200;
+
+/**
+ * Chunk `items` into groups of JOIN_GROUP_SIZE and produce one numbered
+ * output file per group (joined_1.wav / joined_2.wav / …).
+ *
+ * Progress is reported globally across *all* items so the caller's
+ * progress bar reflects the full operation.
+ */
 export async function joinExport(
   items: Array<{ id: string }>,
   format: ExportFormat,
   saveFile: (name: string, blob: Blob, filters: { name: string; extensions: string[] }[]) => Promise<void>,
   onProgress?: ProgressCallback,
 ): Promise<void> {
-  if (format === 'mp3') {
-    await joinExportMp3(items, saveFile, onProgress);
-  } else {
-    await joinExportWav(items, saveFile, onProgress);
+  const total = items.length;
+  let globalDone = 0;
+
+  // Reverse so index 0 = oldest (bottom of the history list).
+  // Group 1 → oldest 200 items, group 2 → next 200, etc.
+  const oldest = [...items].reverse();
+  const groups: Array<{ id: string }>[] = [];
+  for (let i = 0; i < oldest.length; i += JOIN_GROUP_SIZE) {
+    groups.push(oldest.slice(i, i + JOIN_GROUP_SIZE));
+  }
+
+  for (let g = 0; g < groups.length; g++) {
+    const group = groups[g];
+    // Suffix only when there are multiple groups (keeps single-group output as before)
+    const suffix = groups.length > 1 ? `_${g + 1}` : '';
+
+    // Wrap onProgress to report position within the full item list
+    const groupProgress: ProgressCallback | undefined = onProgress
+      ? (current, _groupTotal) => {
+          onProgress(globalDone + current, total);
+        }
+      : undefined;
+
+    if (format === 'mp3') {
+      await joinExportMp3(group, saveFile, groupProgress, suffix);
+    } else {
+      await joinExportWav(group, saveFile, groupProgress, suffix);
+    }
+
+    globalDone += group.length;
   }
 }
 
@@ -201,15 +237,16 @@ async function joinExportMp3(
   items: Array<{ id: string }>,
   saveFile: (name: string, blob: Blob, filters: { name: string; extensions: string[] }[]) => Promise<void>,
   onProgress?: ProgressCallback,
+  fileSuffix = '',
 ): Promise<void> {
   let targetRate: number | null = null;
   // Each element is one clip's worth of compressed MP3 frames (~16 KB/s).
-  // For 170 × 30 s clips this totals ~82 MB — tiny compared to raw PCM.
+  // For 200 × 30 s clips this totals ~96 MB — tiny compared to raw PCM.
+  // Items arrive already in oldest-first order (reversed by the caller).
   const mp3Parts: Uint8Array[] = [];
-  const reversed = [...items].reverse();
 
-  for (let i = 0; i < reversed.length; i++) {
-    const blob = await apiClient.exportGenerationAudio(reversed[i].id);
+  for (let i = 0; i < items.length; i++) {
+    const blob = await apiClient.exportGenerationAudio(items[i].id);
     let audioBuf = await decodeBlob(blob);
 
     if (targetRate === null) targetRate = audioBuf.sampleRate;
@@ -222,7 +259,7 @@ async function joinExportMp3(
     const mp3Bytes = await encodePcmToMp3(left, right, audioBuf.sampleRate);
     mp3Parts.push(mp3Bytes);
 
-    onProgress?.(i + 1, reversed.length);
+    onProgress?.(i + 1, items.length);
   }
 
   if (!mp3Parts.length) return;
@@ -237,7 +274,7 @@ async function joinExportMp3(
   }
 
   await saveFile(
-    'joined.mp3',
+    `joined${fileSuffix}.mp3`,
     new Blob([output.buffer as ArrayBuffer], { type: 'audio/mpeg' }),
     [{ name: 'MP3 Audio', extensions: ['mp3'] }],
   );
@@ -252,16 +289,17 @@ async function joinExportWav(
   items: Array<{ id: string }>,
   saveFile: (name: string, blob: Blob, filters: { name: string; extensions: string[] }[]) => Promise<void>,
   onProgress?: ProgressCallback,
+  fileSuffix = '',
 ): Promise<void> {
   let targetRate: number | null = null;
   const leftChunks: Float32Array[] = [];
   const rightChunks: Float32Array[] = [];
   let hasStereo = false;
   let totalLen = 0;
-  const reversed = [...items].reverse();
+  // Items arrive already in oldest-first order (reversed by the caller).
 
-  for (let i = 0; i < reversed.length; i++) {
-    const blob = await apiClient.exportGenerationAudio(reversed[i].id);
+  for (let i = 0; i < items.length; i++) {
+    const blob = await apiClient.exportGenerationAudio(items[i].id);
     let audioBuf = await decodeBlob(blob);
 
     if (targetRate === null) targetRate = audioBuf.sampleRate;
@@ -276,7 +314,7 @@ async function joinExportWav(
     if (rightSlice) hasStereo = true;
     totalLen += leftSlice.length;
 
-    onProgress?.(i + 1, reversed.length);
+    onProgress?.(i + 1, items.length);
   }
 
   if (targetRate === null) return;
@@ -292,7 +330,7 @@ async function joinExportWav(
 
   const fileBytes = encodeAsWav(mergedLeft, mergedRight, targetRate);
   await saveFile(
-    'joined.wav',
+    `joined${fileSuffix}.wav`,
     new Blob([fileBytes.buffer as ArrayBuffer], { type: 'audio/wav' }),
     [{ name: 'WAV Audio', extensions: ['wav'] }],
   );
