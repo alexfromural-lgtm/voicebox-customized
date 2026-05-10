@@ -184,6 +184,91 @@ function intToWordsRu(n: number): string {
 
 const RU_DIGIT_WORDS = ['ноль', 'один', 'два', 'три', 'четыре', 'пять', 'шесть', 'семь', 'восемь', 'девять'];
 
+// ── Russian year ordinal (prepositional masculine) ─────────────────────────
+// Used when the number is followed by "году" (e.g. "1995 году").
+// Rule: all groups except the last are kept in their cardinal form;
+// only the rightmost non-zero group becomes an ordinal prepositional.
+
+// Ordinal prepositional forms for 1–19
+const RU_ORD_ONES: Record<number, string> = {
+  1: 'первом', 2: 'втором', 3: 'третьем', 4: 'четвёртом',
+  5: 'пятом', 6: 'шестом', 7: 'седьмом', 8: 'восьмом',
+  9: 'девятом', 10: 'десятом', 11: 'одиннадцатом', 12: 'двенадцатом',
+  13: 'тринадцатом', 14: 'четырнадцатом', 15: 'пятнадцатом',
+  16: 'шестнадцатом', 17: 'семнадцатом', 18: 'восемнадцатом', 19: 'девятнадцатом',
+};
+
+// Ordinal prepositional forms for round tens (index = tens digit)
+const RU_ORD_TENS: Record<number, string> = {
+  2: 'двадцатом', 3: 'тридцатом', 4: 'сороковом', 5: 'пятидесятом',
+  6: 'шестидесятом', 7: 'семидесятом', 8: 'восьмидесятом', 9: 'девяностом',
+};
+
+// Ordinal prepositional forms for round hundreds (index = hundreds digit)
+const RU_ORD_HUNDREDS: Record<number, string> = {
+  1: 'сотом', 2: 'двухсотом', 3: 'трёхсотом', 4: 'четырёхсотом',
+  5: 'пятисотом', 6: 'шестисотом', 7: 'семисотом',
+  8: 'восьмисотом', 9: 'девятисотом',
+};
+
+// Ordinal prepositional forms for round thousands (index = thousands digit, 1–9)
+const RU_ORD_THOUSANDS: Record<number, string> = {
+  1: 'тысячном', 2: 'двухтысячном', 3: 'трёхтысячном', 4: 'четырёхтысячном',
+  5: 'пятитысячном', 6: 'шеститысячном', 7: 'семитысячном',
+  8: 'восьмитысячном', 9: 'девятитысячном',
+};
+
+/**
+ * Convert a positive integer (typically a year 1–9999) to the Russian
+ * ordinal prepositional masculine form used in "N году".
+ * E.g. 1995 → "тысяча девятьсот девяносто пятом"
+ */
+function yearToWordsRu(n: number): string {
+  if (n <= 0 || !Number.isInteger(n)) return intToWordsRu(n);
+
+  const k = Math.floor(n / 1000);   // thousands digit(s)
+  const h = Math.floor((n % 1000) / 100); // hundreds digit
+  const t = n % 100;                // last two digits (tens+ones)
+  const parts: string[] = [];
+
+  // ── Thousands (cardinal, special: drop "одна" for 1 000) ──────────────
+  if (k > 0) {
+    if (h === 0 && t === 0) {
+      // Round thousand → full ordinal
+      return RU_ORD_THOUSANDS[k] ?? intToWordsRu(n);
+    }
+    if (k === 1) {
+      parts.push('тысяча'); // "тысяча", not "одна тысяча"
+    } else {
+      parts.push(ruChunk(k, 'f'), ruThousandForm(k));
+    }
+  }
+
+  // ── Hundreds ──────────────────────────────────────────────────────────
+  if (h > 0) {
+    if (t === 0) {
+      // Hundreds is the ordinal tail
+      parts.push(RU_ORD_HUNDREDS[h] ?? RU_HUNDREDS[h]);
+      return parts.filter(Boolean).join(' ');
+    }
+    parts.push(RU_HUNDREDS[h]); // cardinal, more digits follow
+  }
+
+  // ── Tens + ones (the ordinal tail) ───────────────────────────────────
+  if (t > 0) {
+    if (t < 20) {
+      parts.push(RU_ORD_ONES[t] ?? intToWordsRu(t));
+    } else if (t % 10 === 0) {
+      parts.push(RU_ORD_TENS[Math.floor(t / 10)] ?? intToWordsRu(t));
+    } else {
+      // e.g. 25 → "двадцать пятом"
+      parts.push(RU_TENS[Math.floor(t / 10)], RU_ORD_ONES[t % 10] ?? intToWordsRu(t % 10));
+    }
+  }
+
+  return parts.filter(Boolean).join(' ');
+}
+
 function numberToWordsRu(numStr: string): string {
   const isNegative = numStr.startsWith('-');
   const abs = isNegative ? numStr.slice(1) : numStr;
@@ -341,6 +426,19 @@ function numberToWordsIt(numStr: string): string {
 export function replaceNumbersWithWords(text: string, lang: string): string {
   // Only handle languages we know. Fall through for everything else.
   if (lang !== 'en' && lang !== 'ru' && lang !== 'it') return text;
+
+  // ── Russian first pass: "N году" → ordinal prepositional form ──────────
+  // Must run before the generic pass so the number isn't already replaced.
+  if (lang === 'ru') {
+    text = text.replace(
+      /(?<![A-Za-zА-Яа-яЁё\d])(\d+)(?=\s+году)/g,
+      (_match, numStr: string) => {
+        const n = parseInt(numStr, 10);
+        if (n > 0 && n <= 9999) return yearToWordsRu(n);
+        return numStr; // out-of-range: leave for generic pass
+      },
+    );
+  }
 
   const converter =
     lang === 'ru' ? numberToWordsRu
