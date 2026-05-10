@@ -391,7 +391,7 @@ class ApiClient {
     });
   }
 
-  // Translate & Synthesize (Seamless M4T + F5-TTS)
+  // Translate & Synthesize (Helsinki-NLP translation + F5-TTS synthesis)
   async translateAndSynthesize(
     request: TranslateAndSynthesizeRequest,
   ): Promise<TranslateAndSynthesizeResponse> {

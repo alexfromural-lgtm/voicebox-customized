@@ -523,17 +523,16 @@ class AvailableEffectsResponse(BaseModel):
 
 class TranslateAndSynthesizeRequest(BaseModel):
     """
-    Request model for seamless translation + synthesis.
-    
-    Converts source text to target language, then synthesizes in the voice
-    of a reference speaker (if provided). The f5tts_ru backend automatically
-    converts Russian Cyrillic to phonetic representation with stress markers,
-    providing accurate pronunciation by teaching the model acoustic properties
-    of stressed vs unstressed vowels.
+    Request model for Helsinki-NLP translation + F5-TTS synthesis.
+
+    Converts source text to target language using Helsinki-NLP/opus-mt-* models,
+    then synthesizes speech via the F5-TTS backend (not Seamless M4T).
+    The f5tts_ru backend automatically converts Russian Cyrillic to a phonetic
+    representation with stress markers, providing accurate pronunciation by
+    teaching the model the acoustic properties of stressed vs unstressed vowels.
 
     For English source text with Russian target: G2P conversion is skipped as
-    English has no stress-marked phonemes in this implementation. The F5-TTS
-    model handles both languages natively without additional conversion.
+    English has no stress-marked phonemes in this implementation.
     """
 
     source_text: str = Field(..., min_length=1, max_length=50000)
@@ -547,10 +546,10 @@ class TranslateAndSynthesizeRequest(BaseModel):
 
 class TranslateAndSynthesizeResponse(BaseModel):
     """
-    Response model for seamless translation + synthesis.
+    Response model for Helsinki-NLP translation + F5-TTS synthesis.
 
     Returns the target language text along with the synthesized audio path.
-    When using f5tts_ru backend, Russian text is automatically converted to
+    When using f5tts_ru backend, Russian text is automatically converted to a
     phonetic representation with stress markers before synthesis.
     """
 
