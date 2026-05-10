@@ -154,17 +154,19 @@ async def transcribe_audio(
 @router.post("/transcribe_and_synth", response_model=models.TranslateAndSynthesizeResponse)
 async def transcribe_and_synthesize(request: Request):
     """
-    Seamless translation and synthesis endpoint.
-    
-    Converts source text to target language, then synthesizes in the voice
-    of a reference speaker (if provided). The f5tts_ru backend automatically
-    converts Russian Cyrillic to phonetic representation with stress markers,
-    providing accurate pronunciation by teaching the model acoustic properties
-    of stressed vs unstressed vowels.
+    Translation and synthesis endpoint (Helsinki-NLP only — not Seamless M4T).
+
+    Translates source text to the target language using HuggingFace
+    Helsinki-NLP/opus-mt-* models, then synthesizes speech via the F5-TTS
+    backend.  Seamless M4T is NOT used here; see the /translate endpoint for
+    Seamless M4T-based speech translation.
+
+    The f5tts_ru backend automatically converts Russian Cyrillic to a phonetic
+    representation with stress markers, providing accurate pronunciation by
+    teaching the model the acoustic properties of stressed vs unstressed vowels.
 
     For English source text with Russian target: G2P conversion is skipped as
-    English has no stress-marked phonemes in this implementation. The F5-TTS
-    model handles both languages natively without additional conversion.
+    English has no stress-marked phonemes in this implementation.
     """
     try:
         from ..backends.f5tts_ru_backend import F5TTSRuBackend
@@ -215,7 +217,14 @@ async def translate_audio(
     source_audio: UploadFile = File(..., description="Source audio in any language"),
     target_language: str = Form("rus", description="Target language code (default: rus for Russian)"),
 ):
-    """Translate speech from any language to Russian text using HuggingFace Seamless M4T."""
+    """
+    DEAD CODE — this endpoint is not called by the frontend or any other code.
+
+    Translate speech from any language to Russian text using HuggingFace
+    Seamless M4T (seamless-m4t-large via InferenceClient).  This is the only
+    place in the codebase that actually invokes Seamless M4T; it was never
+    wired up to the frontend.
+    """
     
     # Read audio file
     audio_bytes = await source_audio.read()
@@ -253,10 +262,14 @@ async def translate_audio(
 @router.post("/translate_audio", response_model=models.TranslateAndSynthesizeResponse)
 async def translate_audio_text(request: Request):
     """
+    DEAD CODE — this endpoint is not called by the frontend or any other code.
+
     Translate text to target language and synthesize audio.
-    
+
     Accepts JSON with source_text, target_language, and optional voice_prompt.
-    Uses Seamless M4T for translation + F5-TTS Ru for synthesis.
+    Uses Helsinki-NLP/opus-mt-* for translation + F5-TTS Ru for synthesis
+    (NOT Seamless M4T — see /translate for the actual Seamless M4T endpoint,
+    which is also unused).
 
     Example request body:
         {

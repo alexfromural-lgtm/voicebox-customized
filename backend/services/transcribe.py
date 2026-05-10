@@ -1,6 +1,9 @@
 """
 STT (Speech-to-Text) module - delegates to backend abstraction layer.
-Also provides TTS translation and synthesis service.
+Also provides text translation (Helsinki-NLP) + TTS synthesis service.
+
+Note: Seamless M4T is NOT used here. It is used only by the /translate
+route for audio-to-text speech translation.
 """
 
 from typing import Optional, Any, Tuple, Type, List
@@ -33,8 +36,7 @@ class TranslateAndSynthesizeService:
     """
     Service for translating text and synthesizing speech.
     
-    Uses Seamless M4T for translation and a configurable TTS backend
-    (e.g., F5-TTS Ru) for synthesis with optional voice cloning.
+    Translate text using HuggingFace Helsinki-NLP translation models
     """
     
     def __init__(self, tts_backend_class: Type):
@@ -82,10 +84,14 @@ class TranslateAndSynthesizeService:
         
         Returns:
             Tuple of (translated_text, audio_path, duration_seconds, engine_name)
+
+        Note:
+            Translation is performed by Helsinki-NLP/opus-mt-* models only.
+            Seamless M4T is NOT involved in this path.
         """
         import json
-        
-        # Step 1: Translate the text using Seamless M4T
+
+        # Step 1: Translate text using Helsinki-NLP/opus-mt-* (not Seamless M4T).
         translated_text = await self._translate(source_text, target_language)
         
         # Step 2: Synthesize the translated text using the TTS backend
