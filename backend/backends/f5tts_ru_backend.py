@@ -289,6 +289,7 @@ class F5TTSRuBackend:
                     import numpy as np
                     sr_mock = self.device == "cuda" and 24000 or F5_SAMPLE_RATE
                     return torch.zeros(1, int(0.5 * sr_mock), dtype=torch.float32), sr_mock
+                # pyrefly: ignore [unexpected-keyword]
                 return original_load(filepath, mode=mode, channels=channels, frame_offset=frame_offset, duration=duration)
 
             if seed is not None:

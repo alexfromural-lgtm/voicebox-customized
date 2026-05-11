@@ -333,6 +333,15 @@ async def generate_chunked(
             seg_chunks = split_text_into_chunks(seg_stripped, max_chunk_chars)
             seg_audio_parts: List[np.ndarray] = []
 
+            # Prepend a leading silence before the first chunk of the first segment
+            # (only when there is no pending_pause already, i.e. truly the first segment)
+            if not audio_parts and sentence_pause_ms > 0 and seg_chunks:
+                sr_for_lead = sample_rate or 24000
+                lead_silence = np.zeros(
+                    int(sr_for_lead * sentence_pause_ms / 1000), dtype=np.float32
+                )
+                seg_audio_parts.append(lead_silence)
+
             if not seg_chunks:
                 pass
             elif len(seg_chunks) == 1:
@@ -416,6 +425,14 @@ async def generate_chunked(
     )
     audio_chunks: List[np.ndarray] = []
     sample_rate: int | None = None
+
+    # Prepend a leading silence before the very first chunk so the audio
+    # starts with the same gentle onset as the pauses between sentence chunks.
+    if sentence_pause_ms > 0:
+        lead_silence = np.zeros(
+            int(24000 * sentence_pause_ms / 1000), dtype=np.float32
+        )
+        audio_chunks.append(lead_silence)
 
     for i, chunk_text in enumerate(chunks):
         logger.info(
