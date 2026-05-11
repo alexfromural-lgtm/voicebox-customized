@@ -52,6 +52,15 @@ except ImportError as e:
     def is_ruaccent_available() -> bool:  # type: ignore[misc]
         return False
 
+# Import Roman numeral expansion
+try:
+    from ..utils.roman_numerals import expand_roman_numerals as _expand_roman
+except ImportError as e:
+    logger.debug("roman_numerals module not available: %s", e)
+
+    def _expand_roman(text: str, lang: str) -> str:  # type: ignore[misc]
+        return text
+
 
 F5TTS_RU_HF_REPO = "Misha24-10/F5-TTS_RUSSIAN"
 VOCOS_HF_REPO = "charactr/vocos-mel-24khz"
@@ -247,6 +256,9 @@ class F5TTSRuBackend:
             (audio_array, sample_rate)
         """
         await self.load_model()
+
+        # Expand Roman numerals to Russian words before any further processing
+        text = _expand_roman(text, lang="ru")
 
         # Insert + stress markers into Russian Cyrillic text
         is_ru_language = language.lower().startswith("ru") or any(
