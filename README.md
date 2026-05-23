@@ -253,3 +253,7 @@ The original content (download links, features, API documentation, roadmap, deve
 - [x] Verify the result
 </task_progress>
 </write_to_file>
+
+
+just dev-backend   # backend only
+just dev-frontend  # Tauri app only (backend must be running)
