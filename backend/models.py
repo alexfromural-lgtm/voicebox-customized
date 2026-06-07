@@ -73,7 +73,7 @@ class GenerationRequest(BaseModel):
     """Request model for voice generation."""
 
     profile_id: str
-    text: str = Field(..., min_length=1, max_length=500000)
+    text: str = Field(..., min_length=1, max_length=1000000)
     language: str = Field(default="en", pattern="^(zh|en|ja|ko|de|fr|ru|pt|es|it|he|ar|da|el|fi|hi|ms|nl|no|pl|sv|sw|tr)$")
     seed: Optional[int] = Field(None, ge=0)
     model_size: Optional[str] = Field(default="1.7B", pattern="^(1\\.7B|0\\.6B|1B|3B)$")
@@ -535,7 +535,7 @@ class TranslateAndSynthesizeRequest(BaseModel):
     English has no stress-marked phonemes in this implementation.
     """
 
-    source_text: str = Field(..., min_length=1, max_length=500000)
+    source_text: str = Field(..., min_length=1, max_length=1000000)
     target_language: str = Field(
         default="ru", pattern="^(en|zh|ja|ko|de|fr|ru|pt|es|it)$"
     )
