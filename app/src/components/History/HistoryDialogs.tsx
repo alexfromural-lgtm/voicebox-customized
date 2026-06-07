@@ -307,6 +307,80 @@ export function ExportAllDialog({
   );
 }
 
+// ─── Export Single Audio ──────────────────────────────────────────────────────
+
+interface ExportAudioDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  exportFormat: ExportFormat;
+  onFormatChange: (format: ExportFormat) => void;
+  onConfirm: () => void;
+}
+
+export function ExportAudioDialog({
+  open,
+  onOpenChange,
+  exportFormat,
+  onFormatChange,
+  onConfirm,
+}: ExportAudioDialogProps) {
+  const { t } = useTranslation();
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Export Audio</DialogTitle>
+          <DialogDescription>
+            Choose the output format for this audio file.
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Format selector */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-xs font-medium text-muted-foreground">Output format</span>
+          <div className="flex gap-2">
+            {(['wav', 'mp3'] as ExportFormat[]).map((fmt) => (
+              <button
+                key={fmt}
+                type="button"
+                onClick={() => onFormatChange(fmt)}
+                className={[
+                  'flex-1 rounded-md border py-2 text-sm font-medium transition-colors',
+                  exportFormat === fmt
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-border text-muted-foreground hover:border-accent/50 hover:text-foreground',
+                ].join(' ')}
+              >
+                .{fmt.toUpperCase()}
+              </button>
+            ))}
+          </div>
+          {exportFormat === 'mp3' && (
+            <p className="text-[11px] text-muted-foreground">
+              Encoded at 128 kbps locally — no data leaves your device.
+            </p>
+          )}
+          {exportFormat === 'wav' && (
+            <p className="text-[11px] text-muted-foreground">
+              Lossless audio at the original sample rate.
+            </p>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={onConfirm}>
+            <FolderDown className="mr-2 h-4 w-4" />
+            Save .{exportFormat.toUpperCase()}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Effects ──────────────────────────────────────────────────────────────────
 
 interface EffectsDialogProps {

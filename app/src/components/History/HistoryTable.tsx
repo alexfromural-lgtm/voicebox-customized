@@ -27,6 +27,7 @@ import {
   DeleteDialog,
   EffectsDialog,
   ExportAllDialog,
+  ExportAudioDialog,
   ImportDialog,
 } from './HistoryDialogs';
 import { HistoryRow } from './HistoryRow';
@@ -65,6 +66,11 @@ export function HistoryTable() {
   const [exportAllDialogOpen, setExportAllDialogOpen] = useState(false);
   const [exportFormat, setExportFormat] = useState<ExportFormat>('wav');
   const [joinFiles, setJoinFiles] = useState(false);
+  // Per-item audio export dialog
+  const [exportAudioDialogOpen, setExportAudioDialogOpen] = useState(false);
+  const [exportAudioTargetId, setExportAudioTargetId] = useState<string | null>(null);
+  const [exportAudioTargetText, setExportAudioTargetText] = useState<string>('');
+  const [exportAudioFormat, setExportAudioFormat] = useState<ExportFormat>('wav');
 
   // ── Data & mutations ────────────────────────────────────────────────────────
   const limit = 20;
@@ -205,11 +211,23 @@ export function HistoryTable() {
   };
 
   const handleDownloadAudio = (generationId: string, text: string) => {
+    setExportAudioTargetId(generationId);
+    setExportAudioTargetText(text);
+    setExportAudioDialogOpen(true);
+  };
+
+  const handleExportAudioConfirm = () => {
+    if (!exportAudioTargetId) return;
+    setExportAudioDialogOpen(false);
     exportGenerationAudio.mutate(
-      { generationId, text },
+      { generationId: exportAudioTargetId, text: exportAudioTargetText, format: exportAudioFormat },
       {
         onError: (error) =>
-          toast({ title: 'Failed to download audio', description: error.message, variant: 'destructive' }),
+          toast({
+            title: 'Failed to download audio',
+            description: error.message,
+            variant: 'destructive',
+          }),
       },
     );
   };
@@ -594,6 +612,14 @@ export function HistoryTable() {
         onSourceVersionChange={setEffectsSourceVersionId}
         onEffectsChainChange={setEffectsChain}
         onConfirm={handleApplyEffectsConfirm}
+      />
+
+      <ExportAudioDialog
+        open={exportAudioDialogOpen}
+        onOpenChange={setExportAudioDialogOpen}
+        exportFormat={exportAudioFormat}
+        onFormatChange={setExportAudioFormat}
+        onConfirm={handleExportAudioConfirm}
       />
     </div>
   );

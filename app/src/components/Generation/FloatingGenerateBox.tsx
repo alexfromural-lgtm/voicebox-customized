@@ -134,6 +134,7 @@ export function FloatingGenerateBox({
 
   // Sync engine selection to global store so ProfileList can filter
   const watchedEngine = form.watch('engine');
+  const watchedText = form.watch('text');
 
   // When the user explicitly picks an engine incompatible with the currently
   // selected preset profile, deselect that profile so they can choose a compatible one.
@@ -258,12 +259,60 @@ export function FloatingGenerateBox({
     };
   }, [isExpanded]);
 
+  // Kokoro long-text split-queue threshold.
+  // Each queue entry is at most this many characters; the backend's
+  // generate_chunked() further splits them into 1800-char TTS calls.
+  const KOKORO_QUEUE_CHUNK_CHARS = 45_000;
+
   async function onSubmit(data: Parameters<typeof handleSubmit>[0]) {
     await handleSubmit(data, selectedProfileId);
   }
 
-  // Translate button: translate text, fill the form, submit generate (saves to history)
-  const [isTranslating, setIsTranslating] = useState(false);
+  // Whether a Kokoro chunked-queue dispatch is in progress
+  const [isKokoroChunking, setIsKokoroChunking] = useState(false);
+
+  /**
+   * Handle Generate for Kokoro when text exceeds KOKORO_QUEUE_CHUNK_CHARS.
+   * Splits the text into N chunks and fires one generateSpeech call per chunk,
+   * each of which becomes its own history entry (small, downloadable WAV).
+   * The user can then join all entries via Export All → Join.
+   */
+  const handleKokoroChunkedSubmit = async () => {
+    if (!selectedProfileId) return;
+    const textValue = form.getValues('text');
+    const chunks = splitTextIntoChunks(textValue, KOKORO_QUEUE_CHUNK_CHARS);
+
+    setIsKokoroChunking(true);
+    toast({
+      title: t('generation.chunked.started'),
+      description: t('generation.chunked.description', { count: chunks.length }),
+    });
+
+    let successCount = 0;
+    try {
+      for (const chunk of chunks) {
+        form.setValue('text', chunk, { shouldValidate: true });
+        await form.handleSubmit(onSubmit)();
+        successCount++;
+      }
+      toast({
+        title: t('generation.chunked.done', { successCount, total: chunks.length }),
+      });
+    } catch (error) {
+      console.error('Kokoro chunked generation failed:', error);
+      toast({
+        title: t('global.error'),
+        description: t('generation.errors.translationFailed'),
+        variant: 'destructive',
+      });
+    } finally {
+      // Restore the full original text in the input
+      form.setValue('text', textValue, { shouldValidate: false });
+      setIsKokoroChunking(false);
+    }
+  };
+
+
 
   /**
    * Split text into chunks of at most maxChars characters,
@@ -302,6 +351,9 @@ export function FloatingGenerateBox({
     }
     return chunks;
   }
+
+  // Translate button: translate text, fill the form, submit generate (saves to history)
+  const [isTranslating, setIsTranslating] = useState(false);
 
   const handleTranslateAndSynthesize = async () => {
     if (!selectedProfileId) return;
@@ -528,6 +580,11 @@ export function FloatingGenerateBox({
                         </motion.div>
                       </FormControl>
                       <FormMessage className="text-xs" />
+                      {watchedEngine === 'kokoro' && watchedText && watchedText.length > KOKORO_QUEUE_CHUNK_CHARS && (
+                        <p className="text-xs text-muted-foreground/60 mt-1 px-3">
+                          {t('generation.longTextHint', { count: Math.ceil(watchedText.length / KOKORO_QUEUE_CHUNK_CHARS) })}
+                        </p>
+                      )}
                     </FormItem>
                   )}
                 />
@@ -538,18 +595,28 @@ export function FloatingGenerateBox({
                 <div className="group relative">
                   <Button
                     type="submit"
-                    disabled={isPending || !selectedProfileId}
+                    disabled={isPending || isKokoroChunking || !selectedProfileId}
+                    onClick={
+                      watchedEngine === 'kokoro' &&
+                      watchedText &&
+                      watchedText.length > KOKORO_QUEUE_CHUNK_CHARS
+                        ? (e) => {
+                            e.preventDefault();
+                            handleKokoroChunkedSubmit();
+                          }
+                        : undefined
+                    }
                     className="h-10 w-10 rounded-full bg-accent hover:bg-accent/90 hover:scale-105 text-accent-foreground shadow-lg hover:shadow-accent/50 transition-all duration-200"
                     size="icon"
                     aria-label={
-                      isPending
+                      isPending || isKokoroChunking
                         ? t('generation.button.generating')
                         : !selectedProfileId
                           ? t('generation.button.selectFirst')
                           : t('generation.button.generate')
                     }
                   >
-                    {isPending ? (
+                    {isPending || isKokoroChunking ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
                       <Sparkles className="h-4 w-4" />
@@ -564,8 +631,8 @@ export function FloatingGenerateBox({
                   </span>
                 </div>
 
-                {/* Translate button — translates text then auto-submits generate */}
-                {!isPending && (
+                {/* Translate button — hidden for Kokoro (no translation needed; Generate button submits directly) */}
+                {!isPending && watchedEngine !== 'kokoro' && (
                   <div className="group relative">
                     <Button
                       type="button"

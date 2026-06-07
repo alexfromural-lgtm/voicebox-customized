@@ -571,7 +571,8 @@
     "effects": {
       "none": "No effects",
       "profileDefault": "Profile default"
-    }
+    },
+    "longTextHint": "Long text — will be split into {{count}} chunks automatically"
   },
   "main": {
     "importVoice": "Import Voice",

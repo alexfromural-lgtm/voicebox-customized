@@ -17,6 +17,17 @@ export type ExportFormat = 'wav' | 'mp3';
 
 export type ProgressCallback = (current: number, total: number) => void;
 
+// ─── Event-loop yield ────────────────────────────────────────────────────────
+
+/**
+ * Yield control back to the browser's event loop for one tick.
+ * Call this periodically inside CPU-bound encoding loops to prevent
+ * the UI from freezing while encoding large audio files.
+ */
+function yieldToMain(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 // ─── PCM helpers ─────────────────────────────────────────────────────────────
 
 /**
@@ -72,11 +83,11 @@ export async function resampleBuffer(
 }
 
 /** Encode float32 PCM to a 16-bit little-endian WAV Uint8Array. */
-export function encodeAsWav(
+export async function encodeAsWav(
   left: Float32Array,
   right: Float32Array | null,
   sampleRate: number,
-): Uint8Array {
+): Promise<Uint8Array> {
   const numChannels = right ? 2 : 1;
   const dataSize = left.length * numChannels * 2;
   const buf = new ArrayBuffer(44 + dataSize);
@@ -99,6 +110,8 @@ export function encodeAsWav(
   view.setUint32(40, dataSize, true);
   let off = 44;
   const clip = (v: number) => Math.max(-1, Math.min(1, v));
+  // Yield every 50 000 samples so the UI stays responsive during large WAV encodes.
+  const YIELD_EVERY = 50_000;
   for (let i = 0; i < left.length; i++) {
     const l = clip(left[i]);
     view.setInt16(off, l < 0 ? l * 0x8000 : l * 0x7fff, true);
@@ -108,6 +121,7 @@ export function encodeAsWav(
       view.setInt16(off, r < 0 ? r * 0x8000 : r * 0x7fff, true);
       off += 2;
     }
+    if (i > 0 && i % YIELD_EVERY === 0) await yieldToMain();
   }
   return new Uint8Array(buf);
 }
@@ -136,12 +150,19 @@ export async function encodePcmToMp3(
   const chunkSize = 1152;
   const chunks: Uint8Array[] = [];
 
+  // Yield every 100 MP3 frames (≈ 115 200 samples) so the UI remains responsive
+  // during encoding of long audio clips.
+  const YIELD_EVERY_FRAMES = 100;
+  let frameCount = 0;
+
   for (let i = 0; i < lI16.length; i += chunkSize) {
     const lChunk = lI16.subarray(i, i + chunkSize);
     const rChunk = rI16.subarray(i, i + chunkSize);
     const enc =
       numChannels === 2 ? encoder.encodeBuffer(lChunk, rChunk) : encoder.encodeBuffer(lChunk);
     if (enc.length > 0) chunks.push(new Uint8Array(enc));
+    frameCount++;
+    if (frameCount % YIELD_EVERY_FRAMES === 0) await yieldToMain();
   }
   const flushed = encoder.flush();
   if (flushed.length > 0) chunks.push(new Uint8Array(flushed));
@@ -328,7 +349,7 @@ async function joinExportWav(
     off += leftChunks[i].length;
   }
 
-  const fileBytes = encodeAsWav(mergedLeft, mergedRight, targetRate);
+  const fileBytes = await encodeAsWav(mergedLeft, mergedRight, targetRate);
   await saveFile(
     `joined${fileSuffix}.wav`,
     new Blob([fileBytes.buffer as ArrayBuffer], { type: 'audio/wav' }),
