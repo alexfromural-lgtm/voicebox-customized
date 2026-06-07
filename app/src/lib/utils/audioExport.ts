@@ -380,8 +380,12 @@ export async function splitExport(
 
   const { writeFile } = await import('@tauri-apps/plugin-fs');
 
-  for (let i = 0; i < items.length; i++) {
-    const { id } = items[i];
+  // Reverse so index 0 = oldest (bottom of the history list), matching joinExport.
+  // This ensures 01.* is the oldest clip and the highest number is the newest.
+  const ordered = [...items].reverse();
+
+  for (let i = 0; i < ordered.length; i++) {
+    const { id } = ordered[i];
     // Fetch, encode and write one file at a time; let each blob be GC'd after use
     const blob = await apiClient.exportGenerationAudio(id);
     const ext = format === 'mp3' ? 'mp3' : 'wav';
